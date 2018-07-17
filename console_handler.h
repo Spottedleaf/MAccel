@@ -24,20 +24,20 @@ extern "C" {
 int vprintf_to_console(const COORD pos, const char *format, va_list args);
 
 static inline int printf_to_console(const COORD pos, const char *format, ...) {
-	va_list args;
-	va_start(args, format);
+    va_list args;
+    va_start(args, format);
 
-	return vprintf_to_console(pos, format, args);
+    return vprintf_to_console(pos, format, args);
 }
 
 int vprintf_to_console_next(const char *format, va_list args);
 void console_set_nextline_number(const uint16_t n);
 
 static inline int printf_to_console_next(const char *format, ...) {
-	va_list args;
-	va_start(args, format);
+    va_list args;
+    va_start(args, format);
 
-	return vprintf_to_console_next(format, args);
+    return vprintf_to_console_next(format, args);
 }
 
 #ifdef __cplusplus

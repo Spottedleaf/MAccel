@@ -29,40 +29,40 @@ static char *next_argument(const char *str) {
 }
 
 void command_input(void *param) {
-	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_IDLE);
-	const COORD cursor_pos = *(COORD *)param;
-	free(param);
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_IDLE);
+    const COORD cursor_pos = *(COORD *)param;
+    free(param);
 
     const COORD info_pos = (COORD) { .X = 0, .Y = (cursor_pos.Y + 1) };
 
-	uint32_t id_counter = 0;
+    uint32_t id_counter = 0;
 
-	InterceptionContext context = interception_create_context();
-	InterceptionDevice mouse = INTERCEPTION_MOUSE(0);
+    InterceptionContext context = interception_create_context();
+    InterceptionDevice mouse = INTERCEPTION_MOUSE(0);
     InterceptionDevice keyboard = INTERCEPTION_KEYBOARD(0);
 
-	char input_buffer[256];
+    char input_buffer[256];
 
-	char clear[513];
-	memset(clear, ' ', sizeof(clear) - 1);
-	clear[sizeof(clear) - 1] = '\0';
+    char clear[513];
+    memset(clear, ' ', sizeof(clear) - 1);
+    clear[sizeof(clear) - 1] = '\0';
 
-	const HANDLE console = GetStdHandle(STD_OUTPUT_HANDLE);
-	
-	LARGE_INTEGER freq;
-	LARGE_INTEGER prevTime, currTime;
+    const HANDLE console = GetStdHandle(STD_OUTPUT_HANDLE);
+    
+    LARGE_INTEGER freq;
+    LARGE_INTEGER prevTime, currTime;
 
-	QueryPerformanceFrequency(&freq);
-	QueryPerformanceCounter(&prevTime);
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&prevTime);
 
-	for (;; SetConsoleCursorPosition(console, cursor_pos)) {
+    for (;; SetConsoleCursorPosition(console, cursor_pos)) {
         const size_t read = read_stdin(input_buffer, sizeof(input_buffer));
 
-		clear[read] = '\0';
-		printf_to_console(cursor_pos, clear);
-		clear[read] = ' ';
+        clear[read] = '\0';
+        printf_to_console(cursor_pos, clear);
+        clear[read] = ' ';
 
-		QueryPerformanceCounter(&prevTime);
+        QueryPerformanceCounter(&prevTime);
 
         printf_to_console_next(input_buffer);
 
@@ -179,20 +179,20 @@ void command_input(void *param) {
             printf_to_console(info_pos, "Old Y Multiplier: %.6e, New: %.6e", conv_y, temp);
             conv_y = temp;
         }
-	}
+    }
 }
 
 DWORD command_input_init(COORD cursor_pos) {
-	COORD *cursor_pos_buffer = malloc(sizeof(cursor_pos));
-	*cursor_pos_buffer = cursor_pos;
-	const HANDLE debug_handle = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)command_input, cursor_pos_buffer, 0, NULL);
-	DWORD err = GetLastError();
-	if (debug_handle == NULL) {
-		printf_to_console_next("Could not start command handler thread. Error: %I32u", GetLastError());
-		printf_to_console_next("Commands will not be available.");
-		return err;
-	}
-	return 0;
+    COORD *cursor_pos_buffer = malloc(sizeof(cursor_pos));
+    *cursor_pos_buffer = cursor_pos;
+    const HANDLE debug_handle = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)command_input, cursor_pos_buffer, 0, NULL);
+    DWORD err = GetLastError();
+    if (debug_handle == NULL) {
+        printf_to_console_next("Could not start command handler thread. Error: %I32u", GetLastError());
+        printf_to_console_next("Commands will not be available.");
+        return err;
+    }
+    return 0;
 }
 
 #ifdef __cplusplus
