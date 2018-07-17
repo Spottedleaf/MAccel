@@ -1,0 +1,76 @@
+# 1 = true, 0 = false
+
+# Assumes the number of mouse updates per second is the value given below.
+# Otherwise the program will figure it out automatically. Note that results may be less consistent if a constant rate is not assumed.
+assume-constant-rate=1
+updates-per-second=125
+
+# Debug output. Note that enabling debug will *not* cause *any* latency.
+debug=1
+
+# Allow local debug input. (TODO: Doc)
+# Debug should be enabled if this is true.
+debug-input=1
+
+# Ignores any mosue input. That is, no input is modified. Commands are still available.
+readonly=1
+
+# Multiplier to the sensitivity after it is computed.
+x-post-scale=0.5
+y-post-scale=0.5
+
+# Pre-computation multiplier.
+x-pre-scale=1
+y-pre-scale=1
+
+# Determines the curve of the new sensitivity (0 is no acceleration (sens will be constant and it will be double the post-scale multiplier)
+# 1 is linear acceleration)
+x-pow=0
+y-pow=0
+
+
+# This is used for fun. 
+# When debug is enabled, it will show the distance the mouse has travelled, according to the dpi below.
+dpi=1000
+
+
+
+# A multiplier applied to the input. This is useful for converting beteween DPIs.
+# For example, if the old DPI is 1100, and the new DPI is 4300, then set these multipliers to:
+# 1100/4300 = 0.25581395348837209302325581395349
+# i.e
+# x-multiplier = 0.25581395348837209302325581395349
+# y-multiplier = 0.25581395348837209302325581395349
+x-multiplier=1.0
+y-multiplier=1.0
+
+
+# Whether logging is enabled
+logging-enabled=0
+
+# The key which toggles logging. 
+# See https://docs.microsoft.com/en-us/previous-versions/visualstudio/visual-studio-6.0/aa299374(v=vs.60)
+# for key values
+log-toggle-key=0
+
+# Determines the mode for toggling. 
+# 0 requires the toggle key to be pressed to log
+# 1 requires the logger to be toggled by a key push
+# 2 is always on
+# 
+# By default, if the mode is 1, the logger is initially off
+log-toggle-mode=2
+
+# Movment equation:
+# Constants:
+# s is post-scale
+# a is pre-scale
+# p is power
+# c is multiplier
+# 
+# Variables:
+# x is dots moved
+# t is time (ms)
+
+
+# new_movement = s*(c*x)*((a*(c*x)/t)^p + 1)
