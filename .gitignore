@@ -1,3 +1,10 @@
+## Maccel
+.csv
+accel_settings.txt
+
+# VS BS
+/x64/
+
 # Prerequisites
 *.d
 
@@ -17,13 +24,13 @@
 *.pch
 
 # Libraries
-*.lib
+#*.lib
 *.a
 *.la
 *.lo
 
 # Shared objects (inc. Windows DLLs)
-*.dll
+#*.dll
 *.so
 *.so.*
 *.dylib
