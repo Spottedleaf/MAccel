@@ -220,7 +220,7 @@ int rl_read_config(void *dst, const char *file_name, const struct rl_config_memb
         if (*line_buffer == '#') {
             continue;
         }
-		
+        
 
         char *splitter = memchr(line_buffer, '=', line_buffer_len);
         if (!splitter) {
@@ -228,7 +228,7 @@ int rl_read_config(void *dst, const char *file_name, const struct rl_config_memb
         }
         /* Set the splitter for the reader functions */
         *splitter = '\0';
-		
+        
         /* Find member responsible */
         const struct rl_config_member *current_member = members + member_predict;
         if (strcmp(line_buffer, current_member->name)) {
@@ -255,9 +255,9 @@ int rl_read_config(void *dst, const char *file_name, const struct rl_config_memb
             fclose(fd);
             return err;
         }
-		if (member_predict != (nmembers - 1)) {
-			++member_predict;
-		}
+        if (member_predict != (nmembers - 1)) {
+            ++member_predict;
+        }
         continue;
     }
 }

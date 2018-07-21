@@ -68,11 +68,7 @@ void command_input(void *param) {
 
         const char *arguments = strchr(input_buffer, ' ');
 
-        if (strstr(input_buffer, "minput") == input_buffer) {
-
-        } else if (strstr(input_buffer, "kinput") == input_buffer) {
-
-        } else if (strstr(input_buffer, "delta") == input_buffer) {
+        if (strstr(input_buffer, "delta") == input_buffer) {
             if (!arguments) {
                 printf_to_console(info_pos, clear);
                 printf_to_console(info_pos, "delta <x2> <y2> <x1> <y1> <delay> [ntimes] [period] [absolute]");

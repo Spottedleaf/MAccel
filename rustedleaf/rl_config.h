@@ -21,9 +21,9 @@ int rl_conf_read_flt(void *dst, const char *val, const size_t strlen);
 int rl_conf_read_dbl(void *dst, const char *val, const size_t strlen);
 
 struct rl_config_member {
-	const char *name;
-	size_t struct_offset;
-	int (*read_function)(void *dst, const char *  val, size_t strlen);
+    const char *name;
+    size_t struct_offset;
+    int (*read_function)(void *dst, const char *  val, size_t strlen);
 };
 
 int rl_read_config(void *dst, const char *file_name, const struct rl_config_member *members, const size_t nmembers);
