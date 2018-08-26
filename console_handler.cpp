@@ -18,58 +18,57 @@ extern "C" {
 #endif /* __cplusplus */
 
 void console_set_nextline_number(const uint16_t n) {
-    atomic_store(&last_line_y, n);
+    std::atomic_store(&last_line_y, n);
 }
 
-/* For this function, ignore newline */
-int vprintf_to_console(const COORD pos, const char *format, va_list args) {
-    char buff[1024];
+void console_modify_nextline_number(const uint16_t n) {
+    std::atomic_fetch_add(&last_line_y, n);
+}
 
-    const int len = vsnprintf(buff, sizeof(buff), format, args);
-
-    if (len >= sizeof(buff)) {
-        SetLastError(ERROR_NOT_ENOUGH_MEMORY);
-        return -1;
-    } else if (len < 0) {
+/* Prints to a single line with an option to clear */
+int print_to_console_pos_internal(const COORD pos, const HANDLE to, const int clear, const char *message) {
+    if (!to || to == INVALID_HANDLE_VALUE) {
         SetLastError(ERROR_INVALID_PARAMETER);
         return -1;
     }
 
-    /* vsnprintf handles va_end */
-
-    CHAR_INFO writebuffer[1024];
-    memset(writebuffer, 0, sizeof(*writebuffer) * len);
-
-    HANDLE stdout_handle = GetStdHandle(STD_OUTPUT_HANDLE);
-    if (stdout_handle == NULL) {
+    if (pos.Y >= CONSOLE_MAX_CHARACTERS_LINE) {
         return 0;
-    } else if (stdout_handle == INVALID_HANDLE_VALUE) {
-        return -1;
+    }
+    
+    const size_t max = CONSOLE_MAX_CHARACTERS_LINE - pos.Y;
+
+    size_t len = strlen(message);
+    if (len > max) {
+        len = max;
     }
 
-    size_t write_len = (size_t)len;
+    CHAR_INFO writebuffer[CONSOLE_MAX_CHARACTERS_LINE];
+    memset(writebuffer, 0, sizeof(writebuffer));
 
-    for (size_t i = 0, write_index = 0; i < (size_t)len; ++i) {
-        const char c = buff[i];
+    for (size_t i = 0; i < len; ++i) {
+        CHAR_INFO *current = writebuffer + i;
 
-        if (c == '\n' || c == '\r') {
-            --write_len;
-            continue;
-        }
-
-        CHAR_INFO *current = writebuffer + write_index;
-
-        current->Char.AsciiChar = c;
+        current->Char.AsciiChar = message[i];
         current->Attributes = FOREGROUND_RED | FOREGROUND_BLUE | FOREGROUND_GREEN;
-        ++write_index;
+    }
+    if (clear) {
+        CHAR_INFO reference;
+        memset(&reference, 0, sizeof(reference));
+        reference.Char.AsciiChar = ' ';
+        reference.Attributes = FOREGROUND_RED | FOREGROUND_BLUE | FOREGROUND_GREEN;
+        for (size_t i = len; i < max; ++i) {
+            writebuffer[i] = reference;
+        }
+        len = max;
     }
 
-    if (!write_len) {
+    if (!len) {
         return 0;
     }
 
     COORD buffer_size;
-    buffer_size.X = (SHORT)write_len;
+    buffer_size.X = (SHORT)len;
     buffer_size.Y = 1;
 
     COORD buffer_coord;
@@ -78,20 +77,71 @@ int vprintf_to_console(const COORD pos, const char *format, va_list args) {
     SMALL_RECT region;
     region.Left = (SHORT)pos.X;
     region.Top = region.Bottom = (SHORT)pos.Y;
-    region.Right = (SHORT)(pos.X + write_len);
+    region.Right = (SHORT)(pos.X + len);
 
-    BOOL err = WriteConsoleOutput(stdout_handle, writebuffer, buffer_size, buffer_coord, &region);
-    return !err;
+
+    const BOOL err = WriteConsoleOutput(to, writebuffer, buffer_size, buffer_coord, &region);
+    return err ? len : -1;
 }
 
-/* This function writes the line atomically, ignoring newline characters */
-int vprintf_to_console_next(const char *format, va_list args) {
-    uint16_t next_line = atomic_fetch_add(&last_line_y, 1);
+static size_t split_message(const char *message, const char **buff, const char splitter, const size_t max) {
+    size_t i;
+    for (i = 0; i < max; ++i) {
+        const char *index = strchr(message, splitter);
+        if (!index) {
+            break;
+        }
+
+        const ptrdiff_t len = message - index;
+
+        char *line = (char *) malloc(len + 1);
+        if (!line) {
+            // TODO
+        }
+        memcpy(line, message, len);
+        line[len] = '\0';
+
+        buff[i] = line;
+
+        message = index + 1;
+    }
+
+    return i;
+}
+
+static void free_split_messages(const char **messages, size_t n) {
+    for (size_t i = 0; i < n; ++i) {
+        free((void *) messages[i]);
+    }
+}
+
+int print_to_console_pos(COORD pos, const char *message, const int clear) {
+    char *messages[CONSOLE_MAX_CHARACTERS_LINE];
+
+    const size_t lines = split_message(message, messages, '\n', sizeof(messages) / sizeof(*messages));
+
+    const HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
+
+    for (size_t i = 0; i < lines; ++i, ++pos.Y) {
+        print_to_console_pos_internal(pos, out, clear, messages[i]);
+    }
+}
+
+int print_to_console(const char *message, const int clear) {
+    char *messages[CONSOLE_MAX_CHARACTERS_LINE];
+
+    const size_t lines = split_message(message, messages, '\n', sizeof(messages) / sizeof(*messages));
+
+    const uint16_t start = std::atomic_fetch_add(&last_line_y, lines);
+
+    const HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
+
     COORD pos;
     pos.X = 0;
-    pos.Y = next_line;
-
-    return vprintf_to_console(pos, format, args);
+    pos.Y = start;
+    for (size_t i = 0; i < lines; ++i, ++pos.Y) {
+        print_to_console_pos_internal(pos, out, clear, messages[i]);
+    }
 }
 
 #ifdef __cplusplus

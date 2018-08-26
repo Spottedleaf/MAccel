@@ -166,6 +166,7 @@
     <ClInclude Include="input_handler.h" />
     <ClInclude Include="interception\interception.h" />
     <ClInclude Include="logger.h" />
+    <ClInclude Include="rustedleaf\rl_cdrain_queue.hpp" />
     <ClInclude Include="rustedleaf\rl_config.h" />
     <ClInclude Include="rustedleaf\rl_defs.h" />
     <ClInclude Include="stdafx.h" />
@@ -185,6 +186,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="utils.c" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

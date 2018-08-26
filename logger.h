@@ -14,34 +14,79 @@
 extern "C" {
 #endif /* __cplusplus */
 
+enum entry_type {
+    ENTRY_TYPE_MOUSE_MOVEMENT,
+    ENTRY_TYPE_MOUSE_MISC,
+    ENTRY_TYPE_MESSAGE,
+    ENTRY_TYPE_START_TIME,
+    ENTRY_TYPE_CHANGE_LOG_STATUS,
+};
+
+struct log_entry {
+    const char *message;
+
+    LARGE_INTEGER timestamp;
+
+    uint32_t id;
+
+    int16_t accelx;
+    int16_t accely;
+    int16_t unaccelx;
+    int16_t unaccely;
+
+    enum entry_type type;
+};
+
 struct log_raw {
     const char *format;
 
     struct acceleration_value unformatted;
 };
 
-DWORD init_logger(void);
+DWORD init_logger(const uint8_t logmode, const uint16_t log_toggle, const uint16_t toggle_line, const uint8_t debug);
 
-void log_entry(const struct log_raw *log);
+void push_entry(const struct log_entry *log);
 
-static inline void log_entry_raw(const struct acceleration_value *val) {
-    struct log_raw write;
-    write.format = NULL;
-    write.unformatted = *val;
+static void log_start_time(const LARGE_INTEGER time) {
+    struct log_entry entry;
+    entry.timestamp = time;
+    entry.type = ENTRY_TYPE_START_TIME;
 
-    /* Write to logbuffer */
-    log_entry(&write);
+    push_entry(&entry);
 }
 
-static inline void log_entry_mouse_misc(const unsigned short int state, const double time) {
-    struct acceleration_value write;
-    write.accelx = state;
-    write.time = (float) -time;
+static void log_change_status(const LARGE_INTEGER time, int status) {
+    struct log_entry entry;
+    entry.timestamp = time;
+    entry.accelx = (int16_t) status;
+    entry.type = ENTRY_TYPE_CHANGE_LOG_STATUS;
 
-    log_entry_raw(&write);
+    push_entry(&entry);
 }
 
-static void vprintf_to_log_time(const char *format, const float time, va_list args) {
+static void log_mouse_input(const struct acceleration_value *value, const LARGE_INTEGER time) {
+    struct log_entry entry;
+    entry.timestamp = time;
+    entry.id = value->id;
+    entry.accelx = value->accelx;
+    entry.accely = value->accely;
+    entry.unaccelx = value->unaccelx;
+    entry.unaccely = value->unaccely;
+    entry.type = ENTRY_TYPE_MOUSE_MOVEMENT;
+
+    push_entry(&entry);
+}
+
+static void log_mouse_misc_input(const int16_t state, const LARGE_INTEGER time) {
+    struct log_entry entry;
+    entry.timestamp = time;
+    entry.accelx = state;
+    entry.type = ENTRY_TYPE_MOUSE_MISC;
+
+    push_entry(&entry);
+}
+
+static void vprintf_to_log(const char *format, const LARGE_INTEGER time, va_list args) {
     static const size_t BUFFER_DFLSIZE = 128;
 
     char *buffer = (char *)malloc(BUFFER_DFLSIZE);
@@ -52,31 +97,21 @@ static void vprintf_to_log_time(const char *format, const float time, va_list ar
         vsnprintf(buffer, size + 1, format, args);
     }
 
-    struct log_raw write;
-    write.format = buffer;
-    write.unformatted.time = time;
-
     /* Write to logbuffer */
 
-    log_entry(&write);
+    struct log_entry entry;
+    entry.timestamp = time;
+    entry.message = buffer;
+    entry.type = ENTRY_TYPE_MESSAGE;
+
+    push_entry(&entry);
 }
 
-static void vprintf_to_log(const char *format, va_list args) {
-    vprintf_to_log_time(format, -1.0f, args);
-}
-
-static void printf_to_log(const char *format, ...) {
+static void printf_to_log(const char *format, const LARGE_INTEGER time, ...) {
     va_list args;
 
     va_start(args, format);
-    vprintf_to_log(format, args);
-}
-
-static void printf_to_log_time(const char *format, const float time, ...) {
-    va_list args;
-
-    va_start(args, time);
-    vprintf_to_log_time(format, time, args);
+    vprintf_to_log(format, time, args);
 }
 
 #ifdef __cplusplus

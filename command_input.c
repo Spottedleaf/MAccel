@@ -29,7 +29,7 @@ static char *next_argument(const char *str) {
 }
 
 void command_input(void *param) {
-    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_IDLE);
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_LOWEST);
     const COORD cursor_pos = *(COORD *)param;
     free(param);
 
@@ -43,26 +43,17 @@ void command_input(void *param) {
 
     char input_buffer[256];
 
-    char clear[513];
-    memset(clear, ' ', sizeof(clear) - 1);
-    clear[sizeof(clear) - 1] = '\0';
-
     const HANDLE console = GetStdHandle(STD_OUTPUT_HANDLE);
     
-    LARGE_INTEGER freq;
-    LARGE_INTEGER prevTime, currTime;
-
-    QueryPerformanceFrequency(&freq);
-    QueryPerformanceCounter(&prevTime);
+    const double freq = get_performance_frequency_ms();
+    LARGE_INTEGER prev_time, curr_time;
 
     for (;; SetConsoleCursorPosition(console, cursor_pos)) {
         const size_t read = read_stdin(input_buffer, sizeof(input_buffer));
 
-        clear[read] = '\0';
-        printf_to_console(cursor_pos, clear);
-        clear[read] = ' ';
+        printf_to_console_pos_clear(cursor_pos, "");
 
-        QueryPerformanceCounter(&prevTime);
+        QueryPerformanceCounter(&prev_time);
 
         printf_to_console_next(input_buffer);
 
@@ -70,8 +61,7 @@ void command_input(void *param) {
 
         if (strstr(input_buffer, "delta") == input_buffer) {
             if (!arguments) {
-                printf_to_console(info_pos, clear);
-                printf_to_console(info_pos, "delta <x2> <y2> <x1> <y1> <delay> [ntimes] [period] [absolute]");
+                printf_to_console_pos_clear(info_pos, "delta <x2> <y2> <x1> <y1> <delay> [ntimes] [period] [absolute]");
                 continue;
             }
             ++arguments;
@@ -86,6 +76,7 @@ void command_input(void *param) {
             const char *arg_absolute = next_argument(arg_period);
 
             if (!arg_delay) {
+                printf_to_console_pos_clear(info_pos, "delta <x2> <y2> <x1> <y1> <delay> [ntimes] [period] [absolute]");
                 continue;
             }
 
@@ -123,7 +114,7 @@ void command_input(void *param) {
             stroke.x = delta_x;
             stroke.y = delta_y;
             
-            QueryPerformanceCounter(&prevTime);
+            QueryPerformanceCounter(&prev_time);
 
             if (delay > 0) {
                 Sleep(delay);
@@ -135,44 +126,37 @@ void command_input(void *param) {
                 }
                 interception_send(context, mouse, (const InterceptionStroke *) &stroke, 1);
                 
-                QueryPerformanceCounter(&currTime);
+                QueryPerformanceCounter(&curr_time);
                 
-                printf_to_console(info_pos, clear);
-                printf_to_console(info_pos, "Delta (%+4i, %+4i), time: %.2fms, absolute: %s", delta_x, delta_y,
-                    ((currTime.QuadPart - prevTime.QuadPart) * 1000) / (double)(freq.QuadPart), 
+                printf_to_console_pos_clear(info_pos, "Delta (%+4i, %+4i), time: %.2fms, absolute: %s", delta_x, delta_y,
+                    (curr_time.QuadPart - prev_time.QuadPart) / freq,
                     (absolute == 1) ? "Yes" : "No");
                 
-                prevTime = currTime;
+                prev_time = curr_time;
             }
         } else if (strstr(input_buffer, "multiplier_x") == input_buffer) {
             if (!arguments) {
-                printf_to_console(info_pos, clear);
-                printf_to_console(info_pos, "X Multiplier: %.6e", conv_x);
+                printf_to_console_pos_clear(info_pos, "X Multiplier: %.6e", conv_x);
                 continue;
             }
             const double temp = atof(arguments + 1);
             if (temp == 0.0) {
-                printf_to_console(info_pos, clear);
-                printf_to_console(info_pos, "X Multiplier: %.6e", conv_x);
+                printf_to_console_pos_clear(info_pos, "X Multiplier: %.6e", conv_x);
                 continue;
             }
-            printf_to_console(info_pos, clear);
-            printf_to_console(info_pos, "Old X Multiplier: %.6e, New: %.6e", conv_x, temp);
+            printf_to_console_pos_clear(info_pos, "Old X Multiplier: %.6e, New: %.6e", conv_x, temp);
             conv_x = temp;
         } else if (strstr(input_buffer, "multiplier_y") == input_buffer) {
             if (!arguments) {
-                printf_to_console(info_pos, clear);
-                printf_to_console(info_pos, "Y Multiplier: %.6e", conv_y);
+                printf_to_console_pos_clear(info_pos, "Y Multiplier: %.6e", conv_y);
                 continue;
             }
             const double temp = atof(arguments + 1);
             if (temp == 0.0) {
-                printf_to_console(info_pos, clear);
-                printf_to_console(info_pos, "Y Multiplier: %.6e", conv_y);
+                printf_to_console_pos_clear(info_pos, "Y Multiplier: %.6e", conv_y);
                 continue;
             }
-            printf_to_console(info_pos, clear);
-            printf_to_console(info_pos, "Old Y Multiplier: %.6e, New: %.6e", conv_y, temp);
+            printf_to_console_pos_clear(info_pos, "Old Y Multiplier: %.6e, New: %.6e", conv_y, temp);
             conv_y = temp;
         }
     }
@@ -180,12 +164,15 @@ void command_input(void *param) {
 
 DWORD command_input_init(COORD cursor_pos) {
     COORD *cursor_pos_buffer = malloc(sizeof(cursor_pos));
+    if (!cursor_pos_buffer) {
+        return ERROR_OUTOFMEMORY;
+    }
     *cursor_pos_buffer = cursor_pos;
     const HANDLE debug_handle = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)command_input, cursor_pos_buffer, 0, NULL);
     DWORD err = GetLastError();
     if (debug_handle == NULL) {
-        printf_to_console_next("Could not start command handler thread. Error: %I32u", GetLastError());
-        printf_to_console_next("Commands will not be available.");
+        printf_to_console("Could not start command handler thread. Error: %I32u\n", err);
+        printf_to_console("Commands will not be available.\n");
         return err;
     }
     return 0;

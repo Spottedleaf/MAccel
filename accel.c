@@ -18,9 +18,12 @@
 #include "console_handler.h"
 #include "logger.h"
 
-#define VERSION_MAJOR 6
-#define VERSION_MINOR 1
-#define VERSION_STR "6.1"
+#define MACCEL_VERSION_RELEASE 1
+#define MACCEL_VERSION_MAJOR 0
+#define MACCEL_VERSION_MINOR 0
+
+#define MACCEL_VERSION_STR MACCEL_MAKE_VERSION(MACCEL_VERSION_RELEASE, MACCEL_VERSION_MAJOR, MACCEL_VERSION_MINOR)
+#define MACCEL_VERSION_WSTR MACCEL_MAKE_VERSION_WIDE(MACCEL_VERSION_RELEASE, MACCEL_VERSION_MAJOR, MACCEL_VERSION_MINOR)
 
 static void init_config(struct rl_config_member **members, size_t *len) {
     const struct rl_config_member ret_temp[] = {
@@ -41,7 +44,6 @@ static void init_config(struct rl_config_member **members, size_t *len) {
         rl_create_confmem_u8 ("logging-enabled"     , struct accel_conf, logging_enabled     ),
         rl_create_confmem_u16("log-toggle-key"      , struct accel_conf, log_toggle          ),
         rl_create_confmem_u8 ("log-toggle-mode"     , struct accel_conf, log_toggle_mode     ),
-        rl_create_confmem_u8 ("log-keyboard-input"  , struct accel_conf, log_keyboard_input  ),
     };
     const size_t size = sizeof(ret_temp) / sizeof(*ret_temp);
     struct rl_config_member *ret = calloc(size, sizeof(*ret_temp));
@@ -57,12 +59,10 @@ int is_device(const InterceptionDevice dev) {
     return !interception_is_invalid(dev);
 }
 
-static void setup(InterceptionContext *context, int logging) {
+static void setup(InterceptionContext *context, const int logging) {
     *context = interception_create_context();
-    interception_set_filter(*context, logging ? &is_device : &interception_is_mouse, 
-        logging ? (INTERCEPTION_FILTER_MOUSE_ALL | INTERCEPTION_FILTER_KEY_DOWN | INTERCEPTION_FILTER_KEY_UP | 
-                   INTERCEPTION_FILTER_KEY_E0 | INTERCEPTION_FILTER_KEY_E1) 
-        : INTERCEPTION_FILTER_MOUSE_MOVE);
+    interception_set_filter(*context, &interception_is_mouse, logging ? 
+        INTERCEPTION_FILTER_MOUSE_ALL : INTERCEPTION_FILTER_MOUSE_MOVE);
 }
 
 static void load_config(struct accel_conf *conf) {
@@ -85,7 +85,8 @@ static void load_config(struct accel_conf *conf) {
 int main(void) {
     SetPriorityClass(GetCurrentProcess(), REALTIME_PRIORITY_CLASS);
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
-    system("title Accel v" VERSION_STR);
+    protect_thread();
+    SetConsoleTitle(L"MAccel v " MACCEL_VERSION_WSTR);
 
     /* load config */
 
@@ -110,20 +111,19 @@ int main(void) {
     settings[1].carry = 0.0;
 
     if (conf.debug) {
-        printf("\n\n\n\n\n");
-        printf("Version: " VERSION_STR "\n");
-        printf("Allow local debug input: %s\n", (conf.debug_input ? "true" : "false"));
-        printf("Read-only: %s\n", (conf.readonly ? "true" : "false"));
-        printf("Assume constant refresh-rate: %s\n", (conf.assume_constant_rate ? "true" : "false"));
+        printf_to_console("\n\n\n\n\n");
+        printf_to_console("Version: " MACCEL_VERSION_STR "\n");
+        printf_to_console("Allow local debug input: %s\n", (conf.debug_input ? "true" : "false"));
+        printf_to_console("Read-only: %s\n", (conf.readonly ? "true" : "false"));
+        printf_to_console("Assume constant refresh-rate: %s\n", (conf.assume_constant_rate ? "true" : "false"));
         if (conf.assume_constant_rate) {
             printf("Constant rate: %.1f updates per second, %.3f ms per update\n", conf.updates_per_second, rate);
         }
-        printf("X Power: %.3f, Y Power: %.3f\n", settings[0].power, settings[1].power);
-        printf("X Pre-Scale: %.3f, Y Pre-Scale: %.3f\n", settings[0].pre_scale, settings[1].pre_scale);
-        printf("X Post-Scale: %.3f, Y Post-Scale: %.3f\n", settings[0].post_scale, settings[1].post_scale);
-        printf("X Multiplier: %.6f, Y Multiplier: %.6f\n", conf.x_multiplier, conf.y_multiplier);
-        printf("DPI: %I32u\n", conf.dpi);
-        printf("Logging Enabled: %s\n", (conf.logging_enabled ? "true" : "false"));
+        printf_to_console("X Power: %.3f, Y Power: %.3f\n", settings[0].power, settings[1].power);
+        printf_to_console("X Pre-Scale: %.3f, Y Pre-Scale: %.3f\n", settings[0].pre_scale, settings[1].pre_scale);
+        printf_to_console("X Post-Scale: %.3f, Y Post-Scale: %.3f\n", settings[0].post_scale, settings[1].post_scale);
+        printf_to_console("X Multiplier: %.6f, Y Multiplier: %.6f\n", conf.x_multiplier, conf.y_multiplier);
+        printf_to_console("DPI: %I32u\n", conf.dpi);
         if (conf.logging_enabled) {
             const char *toggle_mode;
             switch (conf.log_toggle_mode) {
@@ -136,13 +136,19 @@ int main(void) {
             case 2:
                 toggle_mode = "Always on";
                 break;
-            default:
-                toggle_mode = "Invalid mode";
-                break;
             }
-            printf("Logging mode: %s\n", toggle_mode);
+            if (conf.log_toggle_mode <= 2) {
+                printf_to_console("Logging Enabled: true\n");
+                printf_to_console("Logging mode: %s\n", toggle_mode);
+            } else {
+                printf_to_console("Logging Enabled: false\n");
+                printf_to_console("Invalid logging mode %u, disabling logging\n", conf.log_toggle_mode);
+                conf.logging_enabled = 0;
+            }
+        } else {
+            printf_to_console("Logging Enabled: false\n");
         }
-        printf("Command: ");
+        printf_to_console("Command: ");
     }
 
     /* Apply the modifiers */
@@ -154,25 +160,21 @@ int main(void) {
 
     InterceptionContext context;
     InterceptionDevice device;
-    InterceptionStroke stroke;
     
-    LARGE_INTEGER timer_freq;
-    LARGE_INTEGER prev_time, curr_time, log_prev_time, log_curr_time;
+    double timer_freq = get_performance_frequency_ms();
+
+    LARGE_INTEGER prev_time, curr_time, log_curr_time;
 
     CONSOLE_SCREEN_BUFFER_INFO cursor_info;
 
     GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &cursor_info);
 
-    console_set_nextline_number(cursor_info.dwCursorPosition.Y + 3);
-
-    COORD log_toggle_line;
-    log_toggle_line.X = 0;
-    log_toggle_line.Y = cursor_info.dwCursorPosition.Y + 2;
+    console_modify_nextline_number(3);
 
     if (conf.debug) {
         DWORD err = init_input_handler(conf.dpi);
         if (err) {
-            conf.debug = 0;
+            conf.debug_input = conf.debug = 0;
         } else if (conf.debug_input) {
             err = command_input_init(cursor_info.dwCursorPosition);
             if (err) {
@@ -182,7 +184,7 @@ int main(void) {
     }
 
     if (conf.logging_enabled) {
-        const DWORD err = init_logger();
+        const DWORD err = init_logger(conf.log_toggle_mode, conf.log_toggle, cursor_info.dwCursorPosition.Y + 2, conf.debug);
         if (err) {
             conf.logging_enabled = 0;
         }
@@ -191,125 +193,88 @@ int main(void) {
     TIMECAPS timings;
 
     timeGetDevCaps(&timings, sizeof(timings));
-
     timeBeginPeriod(timings.wPeriodMin);
 
-    /* Do not listen to keyboard if log is always on or is disabled */
-    setup(&context, conf.logging_enabled && conf.log_toggle_mode != 2);
+    setup(&context, conf.logging_enabled);
     
-    QueryPerformanceFrequency(&timer_freq);
     QueryPerformanceCounter(&prev_time);
-    log_prev_time = prev_time;
+
+    if (conf.logging_enabled) {
+        log_start_time(prev_time);
+        log_change_status(prev_time, conf.logging_enabled == 2 ? 1 : 0);
+    }
 
     uint32_t current_id = 0;
     
     double time;
     double real_time;
 
-    int do_log = conf.log_toggle_mode == 2 ? 1 : 0;
+    InterceptionStroke strokes[32];
+    int read;
 
-    if (conf.logging_enabled) {
-        printf_to_console(log_toggle_line, "LOG TOGGLE: %3s", do_log ? "ON" : "OFF");
-    }
+    while ((read = interception_receive(context, device = interception_wait(context), strokes, sizeof(strokes) / sizeof(*strokes))) > 0) {
+        for (size_t i = 0; i < read; ++i) {
+            InterceptionMouseStroke *coords = (InterceptionMouseStroke *) (strokes + i);
 
-    while (interception_receive(context, device = interception_wait(context), &stroke, 1) > 0) {
-        InterceptionKeyStroke *key = (InterceptionKeyStroke *)&stroke;
-        InterceptionMouseStroke *coords = (InterceptionMouseStroke *)&stroke;
-
-        if (conf.logging_enabled && interception_is_keyboard(device)) {
-            interception_send(context, device, &stroke, 1);
-            if (key->code != conf.log_toggle) {
+            if (coords->state != INTERCEPTION_MOUSE_MOVE_RELATIVE) {
+                /* Mouse button input */
+                interception_send(context, device, coords, 1);
+                QueryPerformanceCounter(&log_curr_time);
+                log_mouse_misc_input(coords->state, log_curr_time);
                 continue;
             }
 
-            if (!conf.log_toggle_mode) {
-                int old = do_log;
-                do_log = (1 ^ (key->state & 1));
-                if (old == do_log) {
-                    continue;
+            QueryPerformanceCounter(&curr_time);
+            real_time = (curr_time.QuadPart - prev_time.QuadPart) / timer_freq;
+
+            if (real_time < 0.01) {
+                real_time = 0.01;
+            }
+
+            if (!conf.assume_constant_rate) {
+                if (real_time > 200.0) {
+                    time = 200.0;
+                } else {
+                    time = real_time;
                 }
-                if (conf.debug) {
-                    printf_to_console(log_toggle_line, "LOG TOGGLE: %3s", do_log ? "ON" : "OFF");
-                }
-                QueryPerformanceCounter(&log_curr_time);
-                printf_to_log_time("LOG TOGGLE %s", (float)(((log_curr_time.QuadPart - log_prev_time.QuadPart) * 1000) / (double)(timer_freq.QuadPart)),
-                    ((do_log) ? "ON" : "OFF"));
-                log_prev_time = log_curr_time;
             } else {
-                if (key->state != INTERCEPTION_KEY_UP) {
-                    continue;
-                }
-                do_log ^= 1;
-                if (conf.debug) {
-                    printf_to_console(log_toggle_line, "LOG TOGGLE: %3s", do_log ? "ON" : "OFF");
-                }
-                QueryPerformanceCounter(&log_curr_time);
-                printf_to_log_time("LOG TOGGLE %s", (float)(((log_curr_time.QuadPart - log_prev_time.QuadPart) * 1000) / (double)(timer_freq.QuadPart)),
-                    (do_log ? "ON" : "OFF"));
-                log_prev_time = log_curr_time;
+                time = rate;
             }
-            continue;
-        }
 
-        if (coords->state != INTERCEPTION_MOUSE_MOVE_RELATIVE) {
-            /* Mouse button input */
-            interception_send(context, device, &stroke, 1);
-            if (!conf.logging_enabled || !do_log) {
-                continue;
+            const int x = coords->x;
+            const int y = coords->y;
+
+            int newx;
+            int newy;
+
+            if (!conf.readonly) {
+                coords->x = newx = rl_perform_accel(&settings[0], x, time);
+                coords->y = newy = rl_perform_accel(&settings[1], y, time);
+            } else {
+                newx = x;
+                newy = y;
             }
-            QueryPerformanceCounter(&log_curr_time);
-            log_entry_mouse_misc(coords->state, ((log_curr_time.QuadPart - log_prev_time.QuadPart) * 1000) / (double)(timer_freq.QuadPart));
-            log_prev_time = log_curr_time;
-            continue;
-        }
 
-        QueryPerformanceCounter(&curr_time);
-        real_time = ((curr_time.QuadPart - prev_time.QuadPart) * 1000) / (double)(timer_freq.QuadPart);
+            interception_send(context, device, coords, 1);
 
-        if (!conf.assume_constant_rate) {
-            time = fmin(real_time, 200.0);
-        } else {
-            time = rate;
-        }
-        
-        const int x = coords->x;
-        const int y = coords->y;
+            prev_time = curr_time;
 
-        int newx;
-        int newy;
+            struct acceleration_value element;
+            element.time = (float)time;
+            element.unaccelx = (int16_t)x;
+            element.unaccely = (int16_t)y;
+            element.accelx = (int16_t)newx;
+            element.accely = (int16_t)newy;
+            element.id = current_id++;
 
-        if (!conf.readonly) {
-            newx = rl_perform_accel(&settings[0], x, time, &settings[0].carry);
-            newy = rl_perform_accel(&settings[1], y, time, &settings[1].carry);
-        } else {
-            newx = x;
-            newy = y;
-        }
+            if (conf.debug) {
+                input_handler_write(&element);
+            }
 
-        coords->x = newx;
-        coords->y = newy;
-
-        interception_send(context, device, &stroke, 1);
-
-        prev_time = curr_time;
-
-        struct acceleration_value element;
-        element.time = (float) real_time;
-        element.unaccelx = (int16_t)x;
-        element.unaccely = (int16_t)y;
-        element.accelx = (int16_t)newx;
-        element.accely = (int16_t)newy;
-        element.id = current_id++;
-
-        if (conf.debug) {
-            input_handler_write(&element);
-        }
-
-        if (conf.logging_enabled && do_log) {
-            log_curr_time = curr_time;
-            element.time = (float) (((log_curr_time.QuadPart - log_prev_time.QuadPart) * 1000) / (double)(timer_freq.QuadPart));
-            log_prev_time = log_curr_time;
-            log_entry_raw(&element);
+            if (conf.logging_enabled) {
+                log_curr_time = curr_time;
+                log_mouse_input(&element, log_curr_time);
+            }
         }
     }
     timeEndPeriod(timings.wPeriodMin);

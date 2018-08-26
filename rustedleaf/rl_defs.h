@@ -1,7 +1,6 @@
 #ifndef RL_DEFS_H
 #define RL_DEFS_H RL_DEFS_H
 
-#define RL_TICKRATE 128
 #define RL_X86_CACHE_LINE_SIZE 64
 
 #include <immintrin.h>
