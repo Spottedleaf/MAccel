@@ -1,5 +1,5 @@
 # MAccel
-Mouse acceleration program based off povohat's program 'interaccel'
+Mouse acceleration program based off povohat's program 'interaccel', found here: http://mouseaccel.blogspot.com/p/blog-table-of-contents.html
 
 This program requires the following driver to be installed:
 https://github.com/oblitum/Interception
