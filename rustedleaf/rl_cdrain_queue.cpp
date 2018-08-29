@@ -130,8 +130,6 @@ static inline void *rl_ptr_offset(const void *ptr, const size_t off) {
 
 /* End rustedleaf copy pastes */
 
-
-
 static inline void sched_yield(void) {
     SwitchToThread();
 }
@@ -156,7 +154,7 @@ static void rl_wait_set(std::atomic_size_t *value, const size_t wait, const size
         size_t temp = wait;
         /* This will synchronize with all previous additions */
         if (std::atomic_compare_exchange_weak_explicit(value, &temp, set, 
-            std::memory_order_acq_rel, std::memory_order_acquire)) {
+                std::memory_order_acq_rel, std::memory_order_acquire)) {
             break;
         }
         rl_pause_intrin();
@@ -182,7 +180,7 @@ main_loop_start:
             }
             do {
                 sched_yield();
-            } while (current_index > RL_CDRAIN_QUEUE_MAX_INDEX);
+            } while (current_index == SIZE_MAX);
         }
         
         /* Not resizing */
@@ -192,22 +190,24 @@ main_loop_start:
         const size_t length_mask = length - 1;
         
 		const size_t curr_index = current_index ^ length;
+        const size_t prev_index = (curr_index - 1) & length_mask;
         const size_t next_index = (current_index + nitems) & length_mask;
         
         size_t head_current = atomic_load_explicit(&queue->head_index, std::memory_order_acquire) & length_mask;
         size_t remaining_length;
-		if (head_current <= curr_index) {
-		    remaining_length = length - curr_index + head_current;
+		if (head_current <= prev_index) {
+		    //remaining_length = length - (prev_index - head_current + 1);
+            remaining_length = length - prev_index + head_current - 1;
 		} else {
-			remaining_length = head_current - curr_index - 1;
+            /* Find the space between the indices */
+			remaining_length = head_current - prev_index - 1;
 		}
         
         /* Note: The only case where head_current == curr_index is if the entire queue is free */
         /* This means that a resize must occur if one element remains, don't use >= for the below */
-        /* TODO: Do not wait for previous index if the queue is empty... Causes immediately deadlock if queue is empty */
         if (remaining_length > nitems) {
             /* space available */
-            const size_t wait_index = (curr_index - 1) & length_mask;
+            const size_t wait_index = prev_index;
             const size_t last_index = (next_index - 1) & length_mask;
             if (atomic_compare_exchange_strong(&queue->allocated_tail_index, &current_index, next_index ^ length)) {
                 void *queued_elements = queue->elements;
@@ -219,9 +219,7 @@ main_loop_start:
 
                     memcpy(queued_elements, rl_ptr_offset(elements, end), nitems - end);
                 }
-                if (curr_index != head_current) {
-                    rl_wait_set(&queue->available_tail_index, wait_index, last_index);
-                }
+                rl_wait_set(&queue->available_tail_index, wait_index, last_index);
                 return 0;
             }
             /* retry with new current_index */
@@ -319,6 +317,13 @@ main_loop_start:
 size_t rl_cdrain_queue_size(struct rl_cdrain_queue *queue) {
     for (;;) {
         size_t head = atomic_load_explicit(&queue->head_index, std::memory_order_seq_cst) & RL_CDRAIN_QUEUE_MAX_INDEX;
+        
+        if (head == SIZE_MAX) {
+            rl_pause_intrin();
+            continue;
+        }
+
+        /* TODO: Make the tail index be length encoded... */
         size_t tail = atomic_load_explicit(&queue->available_tail_index, std::memory_order_seq_cst);
         
         const size_t length_head = ((size_t)1) << rl_floor_log2_size(head);
@@ -335,16 +340,16 @@ size_t rl_cdrain_queue_size(struct rl_cdrain_queue *queue) {
         if (tail >= head) {
             return tail - head;
         } else {
-            return length_head - (head - tail - 1);
+            return length_head - (head - tail - 1); /* apply optimization seen below */
         }
     }
 }
 
 size_t rl_cdrain_queue_drain(struct rl_cdrain_queue *queue, void *buffer, const size_t max_items, const size_t elem_sizeof, const unsigned int flags) {
-    size_t head;
+    size_t head_encoded;
     for (;;) {
-        head = atomic_fetch_or(&queue->head_index, READING_BIT);
-        if (head == SIZE_MAX) {
+        head_encoded = atomic_fetch_or(&queue->head_index, READING_BIT);
+        if (head_encoded == SIZE_MAX) {
             rl_pause_intrin();
             continue;
         }
@@ -352,16 +357,19 @@ size_t rl_cdrain_queue_drain(struct rl_cdrain_queue *queue, void *buffer, const 
     }
     void *elements = queue->elements;
     const size_t tail = atomic_load_explicit(&queue->available_tail_index, std::memory_order_acquire);
-    const size_t length = ((size_t)1) << rl_floor_log2_size(head);
+    const size_t length = ((size_t)1) << rl_floor_log2_size(head_encoded);
     const size_t length_mask = length - 1;
+    const size_t head_decoded = head_encoded ^ length;
     
     size_t items;
     size_t items_to_read;
-    
-    if (tail >= head) {
-        items = tail - head;
+
+    if (tail >= head_decoded) {
+        items = tail - head_decoded;
     } else {
-        items = length - (head - tail - 1);
+        /* head_encoded = head_decoded + length */
+        //items = length - (head_decoded - tail - 1);
+        items = head_encoded - tail + 1;
     }
     if (items > max_items) {
         items_to_read = max_items;
@@ -369,13 +377,13 @@ size_t rl_cdrain_queue_drain(struct rl_cdrain_queue *queue, void *buffer, const 
         items_to_read = items;
     }
     
-    const size_t new_head = (head + items_to_read) & length_mask;
+    const size_t new_head = (head_decoded + items_to_read) & length_mask;
     
     if (tail >= new_head) {
-        memcpy(buffer, rl_ptr_offset(elements, head), items_to_read);
+        memcpy(buffer, rl_ptr_offset(elements, head_decoded), items_to_read);
     } else {
-        const size_t end = length - head;
-        memcpy(buffer, rl_ptr_offset(elements, head), end);
+        const size_t end = length - head_decoded;
+        memcpy(buffer, rl_ptr_offset(elements, head_decoded), end);
         memcpy(rl_ptr_offset(buffer, end), elements, items_to_read - end);
     }
     
@@ -398,9 +406,9 @@ int rl_cdrain_queue_init(struct rl_cdrain_queue *queue, size_t capacity, const s
     
     queue->elements = elements;
     
-    atomic_store_explicit(&queue->head_index, 0, std::memory_order_relaxed);
-    atomic_store_explicit(&queue->available_tail_index, 0, std::memory_order_relaxed);
-    atomic_store_explicit(&queue->allocated_tail_index, 0, std::memory_order_release);
+    atomic_store_explicit(&queue->head_index, capacity | (capacity - 1), std::memory_order_relaxed);
+    atomic_store_explicit(&queue->available_tail_index, (capacity - 1), std::memory_order_relaxed);
+    atomic_store_explicit(&queue->allocated_tail_index, capacity, std::memory_order_relaxed);
     return 0;
 }
 

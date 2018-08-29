@@ -161,6 +161,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="accel.h" />
     <ClInclude Include="command_input.h" />
     <ClInclude Include="console_handler.h" />
     <ClInclude Include="input_handler.h" />
@@ -179,6 +180,7 @@
     <ClCompile Include="console_handler.cpp" />
     <ClCompile Include="input_handler.cpp" />
     <ClCompile Include="logger.cpp" />
+    <ClCompile Include="rustedleaf\rl_cdrain_queue.cpp" />
     <ClCompile Include="rustedleaf\rl_config.c" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>

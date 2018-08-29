@@ -48,6 +48,9 @@
     <ClInclude Include="rustedleaf\rl_cdrain_queue.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="accel.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
@@ -73,6 +76,9 @@
     </ClCompile>
     <ClCompile Include="utils.c">
       <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="rustedleaf\rl_cdrain_queue.cpp">
+      <Filter>Header Files</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>
