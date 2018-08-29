@@ -58,8 +58,8 @@ static inline unsigned int rl_ceil_log2_u64(const uint64_t val) {
  */
 static inline unsigned int rl_ceil_log2_size(size_t val) {
     if (SIZE_MAX <= UINT32_MAX) {
-	    return rl_ceil_log2_u32((uint32_t) val);
-	} else if (SIZE_MAX <= UINT64_MAX) {
+        return rl_ceil_log2_u32((uint32_t) val);
+    } else if (SIZE_MAX <= UINT64_MAX) {
         return rl_ceil_log2_u64((uint64_t) val);
     }
     abort();
@@ -96,10 +96,10 @@ static inline unsigned int rl_floor_log2_u64(const uint64_t val) {
  */
 static inline unsigned int rl_floor_log2_size(size_t val) {
     if (SIZE_MAX <= UINT32_MAX) {
-	    return rl_floor_log2_u32((uint32_t) val);
-	} else if (SIZE_MAX <= UINT64_MAX) {
-	    return rl_floor_log2_u64((uint64_t) val);
-	}
+        return rl_floor_log2_u32((uint32_t) val);
+    } else if (SIZE_MAX <= UINT64_MAX) {
+        return rl_floor_log2_u64((uint64_t) val);
+    }
     abort();
 }
 
@@ -189,19 +189,19 @@ main_loop_start:
         const size_t length = ((size_t)1) << rl_floor_log2_size(current_index);
         const size_t length_mask = length - 1;
         
-		const size_t curr_index = current_index ^ length;
+        const size_t curr_index = current_index ^ length;
         const size_t prev_index = (curr_index - 1) & length_mask;
         const size_t next_index = (current_index + nitems) & length_mask;
         
         size_t head_current = atomic_load_explicit(&queue->head_index, std::memory_order_acquire) & length_mask;
         size_t remaining_length;
-		if (head_current <= prev_index) {
-		    //remaining_length = length - (prev_index - head_current + 1);
+        if (head_current <= prev_index) {
+            //remaining_length = length - (prev_index - head_current + 1);
             remaining_length = length - prev_index + head_current - 1;
-		} else {
+        } else {
             /* Find the space between the indices */
-			remaining_length = head_current - prev_index - 1;
-		}
+            remaining_length = head_current - prev_index - 1;
+        }
         
         /* Note: The only case where head_current == curr_index is if the entire queue is free */
         /* This means that a resize must occur if one element remains, don't use >= for the below */
