@@ -1,14 +1,10 @@
 #include <stdint.h>
 #include <math.h>
 
-#include <atomic>
-
 #include <Windows.h>
 
 #include "utils.h"
-#include "rustedleaf\rl_cdrain_queue.hpp"
-
-/* Use C++ for atomics */
+#include "rustedleaf\rl_cdrain_queue.h"
 
 #ifdef __cplusplus
 extern "C" {

@@ -1,13 +1,11 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#include <atomic>
-
 #include <Windows.h>
 
 #include "interception/interception.h"
 
-#include "rustedleaf/rl_cdrain_queue.hpp"
+#include "rustedleaf/rl_cdrain_queue.h"
 
 #include "console_handler.h"
 #include "logger.h"

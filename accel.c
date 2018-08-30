@@ -27,20 +27,20 @@
 
 static void init_config(struct rl_config_member **members, size_t *len) {
     const struct rl_config_member ret_temp[] = {
-        rl_create_confmem_u8 ("assume-constant-rate", struct accel_conf, assume_constant_rate),
-        rl_create_confmem_dbl("updates-per-second"  , struct accel_conf, updates_per_second  ),
+        //rl_create_confmem_u8 ("assume-constant-rate", struct accel_conf, assume_constant_rate),
+        //rl_create_confmem_dbl("updates-per-second"  , struct accel_conf, updates_per_second  ),
         rl_create_confmem_u8 ("debug"               , struct accel_conf, debug               ),
         rl_create_confmem_u8 ("debug-input"         , struct accel_conf, debug_input         ),
         rl_create_confmem_u8 ("readonly"            , struct accel_conf, readonly            ),
-        rl_create_confmem_dbl("x-post-scale"        , struct accel_conf, x_post_scale        ),
-        rl_create_confmem_dbl("y-post-scale"        , struct accel_conf, y_post_scale        ),
-        rl_create_confmem_dbl("x-pre-scale"         , struct accel_conf, x_pre_scale         ),
-        rl_create_confmem_dbl("y-pre-scale"         , struct accel_conf, y_pre_scale         ),
-        rl_create_confmem_dbl("x-pow"               , struct accel_conf, x_pow               ),
-        rl_create_confmem_dbl("y-pow"               , struct accel_conf, y_pow               ),
+        //rl_create_confmem_dbl("x-post-scale"        , struct accel_conf, x_post_scale        ),
+        //rl_create_confmem_dbl("y-post-scale"        , struct accel_conf, y_post_scale        ),
+        //rl_create_confmem_dbl("x-pre-scale"         , struct accel_conf, x_pre_scale         ),
+        //rl_create_confmem_dbl("y-pre-scale"         , struct accel_conf, y_pre_scale         ),
+        //rl_create_confmem_dbl("x-pow"               , struct accel_conf, x_pow               ),
+        //rl_create_confmem_dbl("y-pow"               , struct accel_conf, y_pow               ),
         rl_create_confmem_u32("dpi"                 , struct accel_conf, dpi                 ),
-        rl_create_confmem_dbl("x-multiplier"        , struct accel_conf, x_multiplier        ),
-        rl_create_confmem_dbl("y-multiplier"        , struct accel_conf, y_multiplier        ),
+        //rl_create_confmem_dbl("x-multiplier"        , struct accel_conf, x_multiplier        ),
+        //rl_create_confmem_dbl("y-multiplier"        , struct accel_conf, y_multiplier        ),
         rl_create_confmem_u8 ("logging-enabled"     , struct accel_conf, logging_enabled     ),
         rl_create_confmem_u16("log-toggle-key"      , struct accel_conf, log_toggle          ),
         rl_create_confmem_u8 ("log-toggle-mode"     , struct accel_conf, log_toggle_mode     ),
@@ -260,11 +260,11 @@ int main(void) {
             prev_time = curr_time;
 
             struct acceleration_value element;
-            element.time = (float)time;
-            element.unaccelx = (int16_t)x;
-            element.unaccely = (int16_t)y;
-            element.accelx = (int16_t)newx;
-            element.accely = (int16_t)newy;
+            element.time = (float) time;
+            element.unaccelx = x;
+            element.unaccely = y;
+            element.accelx = newx;
+            element.accely = newy;
             element.id = current_id++;
 
             if (conf.debug) {
@@ -279,4 +279,112 @@ int main(void) {
     }
     timeEndPeriod(timings.wPeriodMin);
     return EXIT_SUCCESS;
+}
+
+/* Modified variant of povohat's equation */
+/* Changes: 
+    - Uses the velocity along an axis for computing acceleration instead of the mouse's velocity
+    - Power is one greater
+    - Equation are independent per axis
+    - Carrying is done via modf (this affects each individual transformation but overall it remains the same except for the last transformation)
+    - Multiplier directly to the input (this is very useful for dpi conversions)
+*/
+static int rl_perform_accel(struct rl_accel_settings *settings, const int old, const double time) {
+    const double old_d = (double) old;
+    double v = (old_d / time) * settings->pre_scale;
+    if (old < 0) {
+        v = -v;
+    }
+
+    double accel = pow(v, settings->power) + 1;
+    double next = fma(old_d * accel, settings->post_scale, settings->carry);
+
+    settings->carry = modf(next, &next);
+
+    return (int)next;
+}
+
+struct coordinate default_acceleration_equation(void *data, const struct coordinate pos, const double time) {
+    struct rl_accel_settings *settings = data;
+
+    struct coordinate ret;
+
+    ret.x = rl_perform_accel(settings + 0, pos.x, time);
+    ret.y = rl_perform_accel(settings + 1, pos.y, time);
+
+    return ret;
+}
+
+
+/* Credit to povohat for this equation */
+/* TODO: Check */
+struct coordinate povohat_acceleration_equation(void *data, const struct coordinate pos, const double time) {
+    struct povohat_accel_settings *settings = data;
+
+    double x = pos.x;
+    double y = pos.y;
+
+    const double length = hypot(x, y);
+
+    if (settings->angle_adjustment != 0.0) {
+        const double angle = atan2(x, y) + (settings->angle_adjustment * RL_PI / 180.0);
+
+        x = length * cos(angle);
+        y = length * sin(angle);
+    }
+
+    if (settings->angle_snapping != 0.0) {
+        const double angle_snap = settings->angle_snapping * RL_PI / 180.0;
+        const double angle = atan2(x, y);
+
+        const double cosa = cos(angle);
+        const double sina = sin(angle);
+
+        if (fabs(cosa) < angle_snap) {
+            x = 0;
+            if (sina > 0) {
+                y = length;
+            } else {
+                y = -length;
+            }
+        } else if (fabs(sina) < angle_snap) {
+            y = 0;
+            if (cosa > 0) {
+                x = length;
+            } else {
+                y = -length;
+            }
+        }
+    }
+
+    x *= settings->pre_scale_x;
+    y *= settings->pre_scale_y;
+
+    if (settings->speed_cap != 0.0 && length > settings->speed_cap) {
+        x *= (settings->speed_cap / length);
+        y *= (settings->speed_cap / length);
+    }
+
+    double accel = settings->sensitivity;
+
+    if (settings->acceleration > 0.0) {
+        const double speed = (length / time) - settings->offset;
+        if (speed > 0.0) {
+            accel += pow(speed, settings->power);
+        }
+
+        if (settings->sensitivity_cap > 0 && accel > settings->sensitivity_cap) {
+            accel = settings->sensitivity_cap;
+        }
+    }
+
+    accel /= settings->sensitivity;
+
+    x = fma(x * accel, settings->post_scale_x, settings->carry_x);
+    y = fma(y * accel, settings->post_scale_y, settings->carry_y);
+
+    settings->carry_x = x - floor(x);
+    settings->carry_y = y - floor(y);
+
+    return (struct coordinate) { .x = x, .y = y };
 }

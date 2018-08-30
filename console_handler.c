@@ -1,4 +1,3 @@
-
 #include <cstdio>
 #include <atomic>
 
@@ -7,22 +6,23 @@
 
 #include <Windows.h>
 
+#include "atomic_bridge.h"
 #include "console_handler.h"
 
 /* Use C++ for atomic */
 
-static std::atomic_uint16_t last_line_y;
+static uint16_t last_line_y;
 
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
-
+    
 void console_set_nextline_number(const uint16_t n) {
-    std::atomic_store(&last_line_y, n);
+    atomicb_store_explicit_u16(&last_line_y, n, memory_order_bridge_seq_cst);
 }
 
 void console_modify_nextline_number(const uint16_t n) {
-    std::atomic_fetch_add(&last_line_y, n);
+    atomicb_fetch_add_explicit_u16(&last_line_y, n, memory_order_bridge_seq_cst);
 }
 
 /* Prints to a single line with an option to clear */
@@ -132,7 +132,7 @@ int print_to_console(const char *message, const int clear) {
 
     const size_t lines = split_message(message, messages, '\n', sizeof(messages) / sizeof(*messages));
 
-    const uint16_t start = std::atomic_fetch_add(&last_line_y, lines);
+    const uint16_t start = atomic_fetch_add_explicit(&last_line_y, lines, memory_order_bridge_seq_cst);
 
     const HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
 

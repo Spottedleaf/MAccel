@@ -14,10 +14,10 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#include <atomic>
+#include "..\atomic_bridge.h"
 
 #include "rl_defs.h"
-#include "rl_cdrain_queue.hpp"
+#include "rl_cdrain_queue.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -33,7 +33,7 @@ extern "C" {
 static inline unsigned int rl_ceil_log2_u32(const uint32_t val) {
     #ifdef __GNUC__
     return (sizeof(val) * CHAR_BIT) - __builtin_clzl(val - 1);
-    #elif defined __WIN32
+    #elif defined _WIN32
     return (sizeof(val) * CHAR_BIT) - __lzcnt(val - 1);
     #else
     abort();
@@ -46,7 +46,7 @@ static inline unsigned int rl_ceil_log2_u32(const uint32_t val) {
 static inline unsigned int rl_ceil_log2_u64(const uint64_t val) {
     #ifdef __GNUC__
     return (sizeof(val) * CHAR_BIT) - __builtin_clzll(val - 1);
-    #elif defined __WIN32
+    #elif defined _WIN32
     return (sizeof(val) * CHAR_BIT) - __lzcnt64(val - 1);
     #else
     abort();
@@ -149,12 +149,12 @@ static size_t obtain_max_len(const size_t elem_sizeof) {
     return ((size_t)1) << rl_floor_log2_size(len);
 }
 
-static void rl_wait_set(std::atomic_size_t *value, const size_t wait, const size_t set) {
+static void rl_wait_set(size_t *value, const size_t wait, const size_t set) {
     for (;;) {
         size_t temp = wait;
         /* This will synchronize with all previous additions */
-        if (std::atomic_compare_exchange_weak_explicit(value, &temp, set, 
-                std::memory_order_acq_rel, std::memory_order_acquire)) {
+        if (atomicb_compare_exchange_weak_explicit_size(value, &temp, set, 
+                memory_order_bridge_acq_rel, memory_order_bridge_acquire)) {
             break;
         }
         rl_pause_intrin();
@@ -170,7 +170,7 @@ int rl_cdrain_queue_add(struct rl_cdrain_queue *queue, const void *elements, con
         return RL_ENOMEM;
     }
     
-    size_t current_index = atomic_load_explicit(&queue->allocated_tail_index, std::memory_order_acquire);
+    size_t current_index = atomicb_load_explicit_size(&queue->allocated_tail_index.value, memory_order_bridge_acquire);
 main_loop_start:
     for (;;) {
         /* Test if resizing */
@@ -193,7 +193,8 @@ main_loop_start:
         const size_t prev_index = (curr_index - 1) & length_mask;
         const size_t next_index = (current_index + nitems) & length_mask;
         
-        size_t head_current = atomic_load_explicit(&queue->head_index, std::memory_order_acquire) & length_mask;
+        /* TODO: Ensure length on head is equal to length on tail */
+        size_t head_current = atomicb_load_explicit_size(&queue->head_index.value, memory_order_bridge_acquire) & length_mask;
         size_t remaining_length;
         if (head_current <= prev_index) {
             //remaining_length = length - (prev_index - head_current + 1);
@@ -203,13 +204,14 @@ main_loop_start:
             remaining_length = head_current - prev_index - 1;
         }
         
-        /* Note: The only case where head_current == curr_index is if the entire queue is free */
-        /* This means that a resize must occur if one element remains, don't use >= for the below */
+        /* Note: The only case where head_current == prev_index is if the entire queue is free */
+        /* This means that a resize must occur if no free space remains, don't use >= for the below */
         if (remaining_length > nitems) {
             /* space available */
             const size_t wait_index = prev_index;
             const size_t last_index = (next_index - 1) & length_mask;
-            if (atomic_compare_exchange_strong(&queue->allocated_tail_index, &current_index, next_index ^ length)) {
+            if (atomicb_compare_exchange_strong_explicit_size(&queue->allocated_tail_index.value, &current_index, next_index ^ length,
+                memory_order_bridge_seq_cst, memory_order_bridge_seq_cst)) {
                 void *queued_elements = queue->elements;
                 if (last_index > curr_index) {
                     memcpy(rl_ptr_offset(queued_elements, curr_index * elem_sizeof), elements, nitems);
@@ -219,7 +221,7 @@ main_loop_start:
 
                     memcpy(queued_elements, rl_ptr_offset(elements, end), nitems - end);
                 }
-                rl_wait_set(&queue->available_tail_index, wait_index, last_index);
+                rl_wait_set(&queue->available_tail_index.value, wait_index, last_index);
                 return 0;
             }
             /* retry with new current_index */
@@ -232,7 +234,8 @@ main_loop_start:
         }
         
         /* Attempt to lock allocated_tail_index */
-        if (!atomic_compare_exchange_strong(&queue->allocated_tail_index, &current_index, SIZE_MAX)) {
+        if (!atomicb_compare_exchange_strong_explicit_size(&queue->allocated_tail_index.value, &current_index, SIZE_MAX,
+            memory_order_bridge_seq_cst, memory_order_bridge_seq_cst)) {
             continue;
         }
         
@@ -249,7 +252,7 @@ main_loop_start:
         const size_t queue_start = head_current;
         const size_t queue_end = (curr_index - 1) & length_mask;
         
-        while (atomic_load_explicit(&queue->available_tail_index, std::memory_order_seq_cst) != queue_end) {
+        while (atomicb_load_explicit_size(&queue->available_tail_index.value, memory_order_bridge_seq_cst) != queue_end) {
             sched_yield();
         }
         
@@ -272,10 +275,10 @@ main_loop_start:
         
         /* Update head */
         
-        for (size_t curr = atomic_load_explicit(&queue->head_index, std::memory_order_acquire);;) {
+        for (size_t curr = atomicb_load_explicit_size(&queue->head_index.value, memory_order_bridge_acquire);;) {
             if (curr >= READING_BIT) {
                 sched_yield();
-                curr = atomic_load_explicit(&queue->head_index, std::memory_order_acquire);
+                curr = atomicb_load_explicit_size(&queue->head_index.value, memory_order_bridge_acquire);
                 continue;
             }
             /* Create new head index */
@@ -293,16 +296,17 @@ main_loop_start:
             }
             
             /* Try to lock head */
-            if (!atomic_compare_exchange_strong(&queue->head_index, &curr, SIZE_MAX)) {
+            if (!atomicb_compare_exchange_strong_explicit_size(&queue->head_index.value, &curr, SIZE_MAX,
+                    memory_order_bridge_seq_cst, memory_order_bridge_seq_cst)) {
                 rl_pause_intrin();
                 continue;
             }
             
             queue->elements = new_elements;
             
-            atomic_store_explicit(&queue->available_tail_index, required_length - 1, std::memory_order_relaxed);
+            atomicb_store_explicit_size(&queue->available_tail_index.value, required_length - 1, memory_order_bridge_relaxed);
             
-            atomic_store_explicit(&queue->head_index, new_head, std::memory_order_seq_cst);
+            atomicb_store_explicit_size(&queue->head_index.value, new_head, memory_order_bridge_relaxed);
             /* Unlocked head */
             
             free(curr_elements);
@@ -316,7 +320,7 @@ main_loop_start:
 
 size_t rl_cdrain_queue_size(struct rl_cdrain_queue *queue) {
     for (;;) {
-        size_t head = atomic_load_explicit(&queue->head_index, std::memory_order_seq_cst) & RL_CDRAIN_QUEUE_MAX_INDEX;
+        size_t head = atomicb_load_explicit_size(&queue->head_index.value, memory_order_bridge_seq_cst) & RL_CDRAIN_QUEUE_MAX_INDEX;
         
         if (head == SIZE_MAX) {
             rl_pause_intrin();
@@ -324,7 +328,7 @@ size_t rl_cdrain_queue_size(struct rl_cdrain_queue *queue) {
         }
 
         /* TODO: Make the tail index be length encoded... */
-        size_t tail = atomic_load_explicit(&queue->available_tail_index, std::memory_order_seq_cst);
+        size_t tail = atomicb_load_explicit_size(&queue->available_tail_index.value, memory_order_bridge_seq_cst);
         
         const size_t length_head = ((size_t)1) << rl_floor_log2_size(head);
         const size_t length_tail = ((size_t)1) << rl_floor_log2_size(tail);
@@ -348,7 +352,7 @@ size_t rl_cdrain_queue_size(struct rl_cdrain_queue *queue) {
 size_t rl_cdrain_queue_drain(struct rl_cdrain_queue *queue, void *buffer, const size_t max_items, const size_t elem_sizeof, const unsigned int flags) {
     size_t head_encoded;
     for (;;) {
-        head_encoded = atomic_fetch_or(&queue->head_index, READING_BIT);
+        head_encoded = atomicb_fetch_or_explicit_size(&queue->head_index.value, READING_BIT, memory_order_bridge_seq_cst);
         if (head_encoded == SIZE_MAX) {
             rl_pause_intrin();
             continue;
@@ -356,7 +360,7 @@ size_t rl_cdrain_queue_drain(struct rl_cdrain_queue *queue, void *buffer, const 
         break;
     }
     void *elements = queue->elements;
-    const size_t tail = atomic_load_explicit(&queue->available_tail_index, std::memory_order_acquire);
+    const size_t tail = atomicb_load_explicit_size(&queue->available_tail_index.value, memory_order_bridge_acquire);
     const size_t length = ((size_t)1) << rl_floor_log2_size(head_encoded);
     const size_t length_mask = length - 1;
     const size_t head_decoded = head_encoded ^ length;
@@ -387,7 +391,7 @@ size_t rl_cdrain_queue_drain(struct rl_cdrain_queue *queue, void *buffer, const 
         memcpy(rl_ptr_offset(buffer, end), elements, items_to_read - end);
     }
     
-    atomic_store_explicit(&queue->head_index, new_head | length, std::memory_order_seq_cst);
+    atomicb_store_explicit_size(&queue->head_index.value, new_head | length, memory_order_bridge_seq_cst);
     return items_to_read;
 }
 
@@ -406,9 +410,9 @@ int rl_cdrain_queue_init(struct rl_cdrain_queue *queue, size_t capacity, const s
     
     queue->elements = elements;
     
-    atomic_store_explicit(&queue->head_index, capacity | (capacity - 1), std::memory_order_relaxed);
-    atomic_store_explicit(&queue->available_tail_index, (capacity - 1), std::memory_order_relaxed);
-    atomic_store_explicit(&queue->allocated_tail_index, capacity, std::memory_order_relaxed);
+    atomicb_store_explicit_size(&queue->head_index.value, capacity | (capacity - 1), memory_order_bridge_relaxed);
+    atomicb_store_explicit_size(&queue->available_tail_index.value, (capacity - 1), memory_order_bridge_relaxed);
+    atomicb_store_explicit_size(&queue->allocated_tail_index.value, capacity, memory_order_bridge_relaxed);
     return 0;
 }
 

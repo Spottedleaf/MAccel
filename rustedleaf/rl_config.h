@@ -23,10 +23,11 @@ int rl_conf_read_dbl(void *dst, const char *val, const size_t strlen);
 struct rl_config_member {
     const char *name;
     size_t struct_offset;
-    int (*read_function)(void *dst, const char *  val, size_t strlen);
+    int (*read_function)(void *dst, const char *val, size_t strlen);
 };
 
-int rl_read_config(void *dst, const char *file_name, const struct rl_config_member *members, const size_t nmembers);
+int rl_read_config(void *dst, const char *file_name, const struct rl_config_member *members, const size_t nmembers,
+    void(*nomember_function)(const char *member_name, const char *member_value));
 
 #define rl_create_confmem(n, s, mem, r_function) (struct rl_config_member) { .name = n, .struct_offset = offsetof(s, mem), \
     .read_function = r_function}

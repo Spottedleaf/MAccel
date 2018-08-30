@@ -188,7 +188,8 @@ int rl_conf_read_dbl(void *dst, const char *val, const size_t strlen) {
 
 
 
-int rl_read_config(void *dst, const char *file_name, const struct rl_config_member *members, const size_t nmembers) {
+int rl_read_config(void *dst, const char *file_name, const struct rl_config_member *members, const size_t nmembers, 
+    void (*nomember_function)(const char *member_name, const char *member_value)) {
     FILE *fd;
     errno_t open_err = fopen_s(&fd, file_name, "rt");
     if (open_err) {
@@ -246,6 +247,9 @@ int rl_read_config(void *dst, const char *file_name, const struct rl_config_memb
             }
             if (!current_member) {
                 /* No member found */
+                if (nomember_function != NULL) {
+                    nomember_function(line_buffer, splitter + 1);
+                }
                 continue;
             }
         }
