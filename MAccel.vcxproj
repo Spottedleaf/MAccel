@@ -162,12 +162,13 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="accel.h" />
+    <ClInclude Include="atomic_bridge.h" />
     <ClInclude Include="command_input.h" />
     <ClInclude Include="console_handler.h" />
     <ClInclude Include="input_handler.h" />
     <ClInclude Include="interception\interception.h" />
     <ClInclude Include="logger.h" />
-    <ClInclude Include="rustedleaf\rl_cdrain_queue.hpp" />
+    <ClInclude Include="rustedleaf\rl_cdrain_queue.h" />
     <ClInclude Include="rustedleaf\rl_config.h" />
     <ClInclude Include="rustedleaf\rl_defs.h" />
     <ClInclude Include="stdafx.h" />
@@ -176,11 +177,12 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="accel.c" />
+    <ClCompile Include="atomic_bridge.cpp" />
     <ClCompile Include="command_input.c" />
-    <ClCompile Include="console_handler.cpp" />
-    <ClCompile Include="input_handler.cpp" />
-    <ClCompile Include="logger.cpp" />
-    <ClCompile Include="rustedleaf\rl_cdrain_queue.cpp" />
+    <ClCompile Include="console_handler.c" />
+    <ClCompile Include="input_handler.c" />
+    <ClCompile Include="logger.c" />
+    <ClCompile Include="rustedleaf\rl_cdrain_queue.c" />
     <ClCompile Include="rustedleaf\rl_config.c" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>

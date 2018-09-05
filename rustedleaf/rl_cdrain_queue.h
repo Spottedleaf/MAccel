@@ -13,11 +13,13 @@ extern "C" {
 #endif /* __cplusplus */
 
 /* Use 1 bit for the reading bit flag and 1 bit for queue length */
+/* The max length may never be SIZE_MAX ^ (SIZE_MAX >> 1) */
 static const size_t RL_CDRAIN_QUEUE_MAX_INDEX = SIZE_MAX >> 2;
 static const size_t RL_CDRAIN_QUEUE_MAX_LENGTH = 1 + (SIZE_MAX >> 2);
 
 enum rl_cdrain_queue_flags {
-    RL_CDRAIN_QUEUE_NORESIZE = 1
+    RL_CDRAIN_QUEUE_NORESIZE = (1 << 0),
+    RL_CDRAIN_QUEUE_PEEK     = (1 << 1),
 };
 
 __declspec(align(RL_X86_CACHE_LINE_SIZE)) struct rl_aligned_cache_size {
@@ -37,8 +39,6 @@ struct rl_cdrain_queue {
     struct rl_aligned_cache_size allocated_tail_index;
 };
 
-
-
 __declspec(align(RL_X86_CACHE_LINE_SIZE)) struct rl_aligned_cache_cdrain_queue {
     struct rl_cdrain_queue queue;
 };
@@ -50,7 +50,7 @@ int rl_cdrain_queue_add(struct rl_cdrain_queue *queue, const void *elements, siz
 /* This function is not MT-Safe */
 size_t rl_cdrain_queue_drain(struct rl_cdrain_queue *queue, void *buffer, size_t max_items, size_t elem_sizeof, unsigned int flags);
 
-/* The value returned by this function is inaccurate if a drain operation is done concurrently */
+/* If this function is not called in parallel with a drain operation it is reentrant, otherwise it is not MT-Safe */
 size_t rl_cdrain_queue_size(struct rl_cdrain_queue *queue);
 
 
