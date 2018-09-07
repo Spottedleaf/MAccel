@@ -123,12 +123,6 @@ static void *rl_smalloc(const size_t nitems, const size_t itemsize) {
     return ret;
 }
 
-
-static inline void *rl_ptr_offset(const void *ptr, const size_t off) {
-    const uint8_t *ptr_u8 = (const uint8_t *) ptr;
-    return ptr_u8 + off;
-}
-
 /* End rustedleaf copy pastes */
 
 static inline void sched_yield(void) {
@@ -230,7 +224,7 @@ main_loop_start:
             /* space available */
             const size_t last_index = (allocated_end - 1) & length_mask; /* Inclusive */
             if (!atomicb_compare_exchange_strong_explicit_size(allocated_tail_index, &current_index, allocated_end | length,
-                memory_order_bridge_seq_cst, memory_order_bridge_seq_cst)) {
+                    memory_order_bridge_seq_cst, memory_order_bridge_seq_cst)) {
                 continue;
             }
 
@@ -328,6 +322,10 @@ main_loop_start:
             
             atomicb_store_explicit_size(available_tail_index, (required_length - 1) | expected_length, memory_order_bridge_relaxed);
             
+            atomic_store_explicit_size(allocated_tail_index, required_length | expected_length, memory_order_bridge_release);
+            /* Note: The ordering of this write allows for a thread to pickup SIZE_MAX as head */
+            /* This write needs to be released to avoid re-ordering with the elements write */
+
             atomicb_store_explicit_size(head_index, new_head, memory_order_bridge_seq_cst);
             /* Unlocked head */
             
@@ -353,7 +351,8 @@ size_t rl_cdrain_queue_size(struct rl_cdrain_queue *queue) {
 
         head &= RL_CDRAIN_QUEUE_INDEX_MASK; /* Allow to be called during interrupt (ignores reading bit flag) */
 
-        size_t tail = atomicb_load_explicit_size(available_tail_index, memory_order_bridge_seq_cst);
+        size_t tail = atomicb_load_explicit_size(available_tail_index, memory_order_bridge_acquire);
+        size_t tail_encoded = tail;
         
         const size_t length_head = ((size_t)1) << rl_floor_log2_size(head);
         const size_t length_tail = ((size_t)1) << rl_floor_log2_size(tail);
@@ -368,38 +367,50 @@ size_t rl_cdrain_queue_size(struct rl_cdrain_queue *queue) {
         if (tail >= head) {
             return tail - head;
         } else {
-            /* TODO: use tail encoded top optimize out the need to add length_head */
-            return length_head - (head - tail - 1);
+            /* Formerly length - (head - tail - 1) */
+            return tail_encoded - head + 1;
         }
     }
 }
 
 size_t rl_cdrain_queue_drain(struct rl_cdrain_queue *queue, void *buffer, const size_t max_items, const size_t elem_sizeof, const unsigned int flags) {
-    size_t head_encoded;
-    for (;;) {
-        head_encoded = atomicb_fetch_or_explicit_size(&queue->head_index.value, READING_BIT, memory_order_bridge_seq_cst);
-        if (head_encoded == SIZE_MAX) {
-            rl_pause_intrin();
-            continue;
+    size_t head;
+    if (flags & RL_CDRAIN_QUEUE_NORESIZE) {
+        head = atomicb_load_explicit_size(&queue->head_index.value, memory_order_bridge_seq_cst);
+    } else {
+        for (;;) {
+            head = atomicb_fetch_or_explicit_size(&queue->head_index.value, READING_BIT, memory_order_bridge_seq_cst);
+            if (head == SIZE_MAX) {
+                rl_pause_intrin();
+                continue;
+            }
+            break;
         }
-        break;
     }
+
+    /* Since writes to tail are seq_cst, and sychronization already occured, tail is pretty up-to-date */
+    /* Use acquire to synchronize with the state at tail's point in time */
+    size_t tail = atomicb_load_explicit_size(&queue->available_tail_index.value, memory_order_bridge_acquire);
+
     /* By locking the head it is guaranteed the tail will have the same length as head */
     void *__restrict elements = queue->elements;
 
-    const size_t length = ((size_t)1) << rl_floor_log2_size(head_encoded);
+    const size_t length = ((size_t)1) << rl_floor_log2_size(head);
     const size_t length_mask = length - 1;
-    const size_t head_decoded = head_encoded ^ length;
     
-    const size_t tail = atomicb_load_explicit_size(&queue->available_tail_index.value, memory_order_bridge_relaxed) ^ length;
+    const size_t tail_encoded = tail;
+
+    tail ^= length;
+    head ^= length;
 
     size_t queue_size;
     size_t items_to_read;
 
-    if (tail >= head_decoded) {
-        queue_size = tail - head_decoded;
+    if (tail >= head) {
+        queue_size = tail - head;
     } else {
-        queue_size = length - (head_decoded - tail - 1);
+        /* Formerly length - (head - tail - 1) */
+        queue_size = tail_encoded - head + 1;
     }
 
     if (queue_size >= max_items) {
@@ -408,20 +419,23 @@ size_t rl_cdrain_queue_drain(struct rl_cdrain_queue *queue, void *buffer, const 
         items_to_read = queue_size;
     }
     
-    const size_t new_head = (head_decoded + items_to_read) & length_mask;
+    const size_t new_head = (head + items_to_read) & length_mask;
     
     if (buffer) {
         if (tail >= new_head) {
-            arraycopy(buffer, 0, elements, head_decoded, items_to_read, elem_sizeof);
+            arraycopy(buffer, 0, elements, head, items_to_read, elem_sizeof);
         } else {
-            const size_t end = length - head_decoded;
-            arraycopy(buffer, 0, elements, head_decoded, end, elem_sizeof);
+            const size_t end = length - head;
+            arraycopy(buffer, 0, elements, head, end, elem_sizeof);
             arraycopy(buffer, end, elements, 0, items_to_read - end, elem_sizeof);
         }
     }
 
     if (flags & RL_CDRAIN_QUEUE_PEEK) {
-        atomicb_store_explicit_size(&queue->head_index.value, head_encoded, memory_order_bridge_seq_cst);
+        /* Only write if there's a need */
+        if (!(flags & RL_CDRAIN_QUEUE_NORESIZE)) {
+            atomicb_store_explicit_size(&queue->head_index.value, head, memory_order_bridge_seq_cst);
+        }
     } else {
         atomicb_store_explicit_size(&queue->head_index.value, new_head | length, memory_order_bridge_seq_cst);
     }
@@ -451,6 +465,7 @@ int rl_cdrain_queue_init(struct rl_cdrain_queue *queue, size_t capacity, const s
     atomicb_store_explicit_size(&queue->head_index.value, capacity | (capacity - 1), memory_order_bridge_relaxed);
     atomicb_store_explicit_size(&queue->available_tail_index.value, capacity | (capacity - 1), memory_order_bridge_relaxed);
     atomicb_store_explicit_size(&queue->allocated_tail_index.value, capacity, memory_order_bridge_relaxed);
+    /* It is the creator's duty to ensure proper synchronization with initing this queue */
     return 0;
 }
 
