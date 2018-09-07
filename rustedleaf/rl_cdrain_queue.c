@@ -18,6 +18,7 @@
 
 #include "rl_defs.h"
 #include "rl_cdrain_queue.h"
+#include "..\utils.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -219,7 +220,7 @@ main_loop_start:
         size_t remaining_length;
         if (queue_start <= queue_end) {
             //remaining_length = length - (queue_end - queue_start);
-            remaining_length = length - queue_end + queue_start;
+            remaining_length = length - queue_end + queue_start - 1;
         } else {
             /* Find the space between the indices */
             remaining_length = queue_start - queue_end - 1;
@@ -236,13 +237,12 @@ main_loop_start:
             void *__restrict queued_elements = queue->elements;
             if (last_index >= allocated_start) {
                 /* Sequential */
-                memcpy(rl_ptr_offset(queued_elements, allocated_start * elem_sizeof), elements, nitems);
+                arraycopy(queued_elements, allocated_start, elements, 0, nitems, elem_sizeof);
             } else {
                 /* Wrapped */
                 const size_t end = length - allocated_start;
-                memcpy(rl_ptr_offset(queued_elements, allocated_start * elem_sizeof), elements, end);
-
-                memcpy(queued_elements, rl_ptr_offset(elements, end), nitems - end);
+                arraycopy(queued_elements, allocated_start, elements, 0, end, elem_sizeof);
+                arraycopy(queued_elements, 0, elements, end, nitems - end, elem_sizeof);
             }
 
             rl_wait_set(available_tail_index, queue_end | length, last_index | length);
@@ -279,20 +279,20 @@ main_loop_start:
         
         if (queue_start < queue_end) {
             /* sequentially ordered */
-            memcpy(new_elements, rl_ptr_offset(curr_elements, queue_start), length - remaining_length);
+            arraycopy(new_elements, 0, curr_elements, queue_start, length - remaining_length, elem_sizeof);
         } else {
             /* wrapped */
             
             /* copy from head->max index */
-            memcpy(new_elements, rl_ptr_offset(curr_elements, queue_start), length - queue_start);
+            arraycopy(new_elements, 0, curr_elements, queue_start, length - queue_start, elem_sizeof);
             
             /* copy from 0->tail */
-            memcpy(rl_ptr_offset(new_elements, length - queue_start), curr_elements, queue_end + 1);
+            arraycopy(new_elements, length - queue_start, curr_elements, 0, queue_end + 1, elem_sizeof);
         }
         
         /* Copy our elements over */
         
-        memcpy(rl_ptr_offset(new_elements, length - remaining_length), elements, nitems * elem_sizeof);
+        arraycopy(new_elements, length - remaining_length, elements, 0, nitems, elem_sizeof);
         
         /* Update head */
         
@@ -313,7 +313,8 @@ main_loop_start:
             if (updated_head >= old_head) {
                 new_head = (updated_head - old_head) | expected_length;
             } else {
-                new_head = ((length - old_head) + (updated_head + 1)) | expected_length;
+                /* TODO: Test performance of using ADD over OR (out of order execution / parallel) */
+                new_head = (length - old_head + updated_head) | expected_length;
             }
             
             /* Try to lock head */
@@ -361,15 +362,14 @@ size_t rl_cdrain_queue_size(struct rl_cdrain_queue *queue) {
             continue;
         }
         
-        const size_t head_encoded = head;
-        const size_t length_mask = length_head - 1;
-        head &= length_mask;
+        head ^= length_head;
         tail ^= length_head;
         
         if (tail >= head) {
             return tail - head;
         } else {
-            return tail - head_encoded + 1;
+            /* TODO: use tail encoded top optimize out the need to add length_head */
+            return length_head - (head - tail - 1);
         }
     }
 }
@@ -393,32 +393,30 @@ size_t rl_cdrain_queue_drain(struct rl_cdrain_queue *queue, void *buffer, const 
     
     const size_t tail = atomicb_load_explicit_size(&queue->available_tail_index.value, memory_order_bridge_relaxed) ^ length;
 
-    size_t items;
+    size_t queue_size;
     size_t items_to_read;
 
     if (tail >= head_decoded) {
-        items = tail - head_decoded;
+        queue_size = tail - head_decoded;
     } else {
-        /* head_encoded = head_decoded + length */
-        // items = length - (head_decoded - tail - 1);
-        items = tail - head_encoded + 1;
+        queue_size = length - (head_decoded - tail - 1);
     }
 
-    if (items > max_items) {
+    if (queue_size >= max_items) {
         items_to_read = max_items;
     } else {
-        items_to_read = items;
+        items_to_read = queue_size;
     }
     
     const size_t new_head = (head_decoded + items_to_read) & length_mask;
     
     if (buffer) {
         if (tail >= new_head) {
-            memcpy(buffer, rl_ptr_offset(elements, head_decoded), items_to_read);
+            arraycopy(buffer, 0, elements, head_decoded, items_to_read, elem_sizeof);
         } else {
             const size_t end = length - head_decoded;
-            memcpy(buffer, rl_ptr_offset(elements, head_decoded), end);
-            memcpy(rl_ptr_offset(buffer, end), elements, items_to_read - end);
+            arraycopy(buffer, 0, elements, head_decoded, end, elem_sizeof);
+            arraycopy(buffer, end, elements, 0, items_to_read - end, elem_sizeof);
         }
     }
 
@@ -440,6 +438,10 @@ int rl_cdrain_queue_init(struct rl_cdrain_queue *queue, size_t capacity, const s
         capacity = 32;
     } else {
         capacity = ((size_t)1) << rl_ceil_log2_size(capacity);
+    }
+
+    if (capacity > obtain_max_len(elem_sizeof)) {
+        return RL_ENOMEM;
     }
     
     void *__restrict elements = rl_smalloc(capacity, elem_sizeof);

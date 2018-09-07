@@ -86,7 +86,7 @@ int main(void) {
     SetPriorityClass(GetCurrentProcess(), REALTIME_PRIORITY_CLASS);
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
     protect_thread();
-    SetConsoleTitle(L"MAccel v " MACCEL_VERSION_WSTR);
+    SetConsoleTitle(L"MAccel v" MACCEL_VERSION_WSTR);
 
     /* load config */
 
