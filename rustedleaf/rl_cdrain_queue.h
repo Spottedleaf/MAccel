@@ -67,7 +67,9 @@ size_t rl_cdrain_queue_drain(struct rl_cdrain_queue *__restrict queue, void *__r
  If a drain operation is occuring in parallel with the same queue object,
  then the result returned is undefined.
 */
-size_t rl_cdrain_queue_size(struct rl_cdrain_queue *queue);
+size_t rl_cdrain_queue_size(struct rl_cdrain_queue *queue, const unsigned int flags);
+
+size_t rl_cdrain_queue_remaining_capacity(struct rl_cdrain_queue *queue, const unsigned int flags);
 
 size_t rl_cdrain_queue_capacity(struct rl_cdrain_queue *queue, const unsigned int flags);
 
