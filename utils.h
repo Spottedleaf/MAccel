@@ -20,15 +20,15 @@ extern "C" {
 #endif /* __cplusplus */
 
 
-static inline void *arraycopy(void *__restrict dst, const size_t dst_off, void *__restrict src,
+static inline void *arraycopy(void *__restrict dst, const size_t dst_off, const void *__restrict src,
     const size_t src_off, const size_t nitems, const size_t elem_sizeof) {
 
     return memcpy(((char *__restrict)dst) + (dst_off * elem_sizeof), 
-        ((char *__restrict)src) + (src_off * elem_sizeof), nitems * elem_sizeof);
+        ((const char *__restrict)src) + (src_off * elem_sizeof), nitems * elem_sizeof);
 }
 
 static void term(const int code) {
-    printf_to_console_next("Press enter to exit...");
+    printf_to_console("Press enter to exit...");
     getc(stdin);
     exit(code);
 }

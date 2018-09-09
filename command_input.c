@@ -55,7 +55,7 @@ void command_input(void *param) {
 
         QueryPerformanceCounter(&prev_time);
 
-        printf_to_console_next(input_buffer);
+        printf_to_console(input_buffer);
 
         const char *arguments = strchr(input_buffer, ' ');
 

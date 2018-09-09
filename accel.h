@@ -146,8 +146,8 @@ struct acceleration_profile {
     uint32_t keybind;
 };
 
-struct coordinate default_acceleration_equation(void *data, struct coordinate pos, double time);
-struct coordinate povohat_acceleration_equation(void *data, struct coordinate pos, double time);
+struct coordinate default_acceleration_equation(void *data, const struct coordinate pos, const double time);
+struct coordinate povohat_acceleration_equation(void *data, const struct coordinate pos, const double time);
 
 #ifdef __cplusplus
 }

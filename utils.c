@@ -17,23 +17,23 @@ void protect_thread(void) {
     GetSecurityInfo(curr_thr, SE_KERNEL_OBJECT, SACL_SECURITY_INFORMATION, NULL, NULL, NULL, &sacl, &descriptor);
     
     PACL new_sacl;
-    EXPLICIT_ACCESS_A access;
-    TRUSTEE_A trustee;
+    EXPLICIT_ACCESS_W access;
+    TRUSTEE_W trustee;
     
     trustee.pMultipleTrustee = NULL;
     trustee.MultipleTrusteeOperation = NO_MULTIPLE_TRUSTEE;
     trustee.TrusteeForm = TRUSTEE_IS_SID;
     trustee.TrusteeType = TRUSTEE_IS_USER;
-    trustee.ptstrName = "CURRENT_USER";
+    trustee.ptstrName = L"CURRENT_USER";
 
     access.grfAccessMode = SET_ACCESS;
     access.grfAccessPermissions = GENERIC_WRITE | GENERIC_READ;
     access.grfInheritance = NO_INHERITANCE;
     access.Trustee = trustee;
 
-    SetEntriesInAcl(1, &access, &sacl, &new_sacl);
+    SetEntriesInAclW(1, &access, sacl, &new_sacl);
 
-    SetSecurityInfo(curr_thr, SE_KERNEL_OBJECT, SACL_SECURITY_INFORMATION, NULL, NULL, NULL, &new_sacl);
+    SetSecurityInfo(curr_thr, SE_KERNEL_OBJECT, SACL_SECURITY_INFORMATION, NULL, NULL, NULL, new_sacl);
 
     LocalFree(descriptor);
 }

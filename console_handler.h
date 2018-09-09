@@ -3,6 +3,7 @@
 
 #include <stdarg.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #include <Windows.h>
 
@@ -40,7 +41,7 @@ static int vprintf_to_console(const char *format, va_list args) {
         return -1;
     }
 
-    print_to_console(message, 0);
+    return print_to_console(message, 0);
 }
 
 static int vprintf_to_console_clear(const char *format, va_list args) {
@@ -56,7 +57,7 @@ static int vprintf_to_console_clear(const char *format, va_list args) {
         return -1;
     }
 
-    print_to_console(message, 1);
+    return print_to_console(message, 1);
 }
 
 static inline int printf_to_console(const char *format, ...) {
@@ -90,7 +91,7 @@ static int vprintf_to_console_pos(const COORD pos, const char *format, va_list a
         return -1;
     }
 
-    print_to_console_pos(pos, message, 0);
+    return print_to_console_pos(pos, message, 0);
 }
 
 static int vprintf_to_console_pos_clear(const COORD pos, const char *format, va_list args) {
@@ -106,7 +107,7 @@ static int vprintf_to_console_pos_clear(const COORD pos, const char *format, va_
         return -1;
     }
 
-    print_to_console_pos(pos, message, 1);
+    return print_to_console_pos(pos, message, 1);
 }
 
 static inline int printf_to_console_pos(const COORD pos, const char *format, ...) {

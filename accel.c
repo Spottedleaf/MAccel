@@ -11,6 +11,7 @@
 
 #include "interception\interception.h"
 #include "rustedleaf\rl_config.h"
+#include "rustedleaf\rl_cdrain_queue.h"
 
 #include "utils.h"
 #include "input_handler.h"
@@ -73,7 +74,7 @@ static void load_config(struct accel_conf *conf) {
 
     memset(conf, 0, sizeof(*conf));
 
-    int err = rl_read_config(conf, "accel_settings.txt", config_format, config_format_len);
+    int err = rl_read_config(conf, "accel_settings.txt", config_format, config_format_len, NULL); //
     if (err) {
         printf("Config read error: errno: %i, err: %i\n", errno, err);
         term(EXIT_FAILURE);
@@ -125,7 +126,7 @@ int main(void) {
         printf_to_console("X Multiplier: %.6f, Y Multiplier: %.6f\n", conf.x_multiplier, conf.y_multiplier);
         printf_to_console("DPI: %I32u\n", conf.dpi);
         if (conf.logging_enabled) {
-            const char *toggle_mode;
+            const char *toggle_mode = NULL;
             switch (conf.log_toggle_mode) {
             case 0:
                 toggle_mode = "Push to enable";
@@ -218,7 +219,7 @@ int main(void) {
 
             if (coords->state != INTERCEPTION_MOUSE_MOVE_RELATIVE) {
                 /* Mouse button input */
-                interception_send(context, device, coords, 1);
+                interception_send(context, device, (InterceptionStroke *) coords, 1);
                 QueryPerformanceCounter(&log_curr_time);
                 log_mouse_misc_input(coords->state, log_curr_time);
                 continue;
@@ -255,7 +256,7 @@ int main(void) {
                 newy = y;
             }
 
-            interception_send(context, device, coords, 1);
+            interception_send(context, device, (InterceptionStroke *) coords, 1);
 
             prev_time = curr_time;
 
@@ -386,5 +387,5 @@ struct coordinate povohat_acceleration_equation(void *data, const struct coordin
     settings->carry_x = x - floor(x);
     settings->carry_y = y - floor(y);
 
-    return (struct coordinate) { .x = x, .y = y };
+    return (struct coordinate) { .x = (int)x, .y = (int)y };
 }

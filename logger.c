@@ -85,7 +85,7 @@ static DWORD get_time(char *buffer, const size_t len) {
 
     TCHAR temp[64];
 
-    int length = _snwprintf_s(temp, sizeof(temp) / sizeof(*temp), L"%.4i-%.2i-%.2i_%ls",
+    int length = _snwprintf_s(temp, sizeof(temp) / sizeof(*temp), sizeof(temp) / sizeof(*temp), L"%.4i-%.2i-%.2i_%ls",
         curr_time.wYear, curr_time.wMonth, curr_time.wDay,
         time_buffer);
 

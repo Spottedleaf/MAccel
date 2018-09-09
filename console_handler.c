@@ -1,8 +1,7 @@
-#include <cstdio>
-#include <atomic>
-
 #include <stdarg.h>
 #include <malloc.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 #include <Windows.h>
 
@@ -81,7 +80,7 @@ int print_to_console_pos_internal(const COORD pos, const HANDLE to, const int cl
 
 
     const BOOL err = WriteConsoleOutput(to, writebuffer, buffer_size, buffer_coord, &region);
-    return err ? len : -1;
+    return err ? (int) len : -1;
 }
 
 static size_t split_message(const char *message, const char **buff, const char splitter, const size_t max) {
@@ -122,9 +121,16 @@ int print_to_console_pos(COORD pos, const char *message, const int clear) {
 
     const HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
 
+    int ret = 0;
+
     for (size_t i = 0; i < lines; ++i, ++pos.Y) {
-        print_to_console_pos_internal(pos, out, clear, messages[i]);
+        const int r = print_to_console_pos_internal(pos, out, clear, messages[i]);
+        if (r < 0) {
+            return r;
+        }
+        ret += r;
     }
+    return ret + (int) lines;
 }
 
 int print_to_console(const char *message, const int clear) {
@@ -132,16 +138,24 @@ int print_to_console(const char *message, const int clear) {
 
     const size_t lines = split_message(message, messages, '\n', sizeof(messages) / sizeof(*messages));
 
-    const uint16_t start = atomic_fetch_add_explicit(&last_line_y, lines, memory_order_bridge_seq_cst);
+    const uint16_t start = atomicb_fetch_add_explicit_u16(&last_line_y, (uint16_t) lines, memory_order_bridge_seq_cst);
 
     const HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
 
     COORD pos;
     pos.X = 0;
     pos.Y = start;
+
+    int ret = 0;
+
     for (size_t i = 0; i < lines; ++i, ++pos.Y) {
-        print_to_console_pos_internal(pos, out, clear, messages[i]);
+        const int r = print_to_console_pos_internal(pos, out, clear, messages[i]);
+        if (r < 0) {
+            return r;
+        }
+        ret += r;
     }
+    return ret + (int) lines;
 }
 
 #ifdef __cplusplus

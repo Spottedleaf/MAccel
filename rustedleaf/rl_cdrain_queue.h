@@ -32,10 +32,10 @@ struct rl_cdrain_queue {
     /* Current head index */
     struct rl_aligned_cache_size head_index;
     
-    /* Inclusive index of the last element added to the queue. */
+    /* Exclusive index of the last element added to the queue */
     struct rl_aligned_cache_size available_tail_index;
     
-    /* Inclusive index of the next index to allocate, may be equal to the current head if the queue is empty. */
+    /* Exclusive index of the last element pending addition to the queue */
     struct rl_aligned_cache_size allocated_tail_index;
 };
 
@@ -43,16 +43,33 @@ __declspec(align(RL_X86_CACHE_LINE_SIZE)) struct rl_aligned_cache_cdrain_queue {
     struct rl_cdrain_queue queue;
 };
 
-int rl_cdrain_queue_init(struct rl_cdrain_queue *queue, size_t capacity, size_t elem_sizeof);
+/* 
+ Not MT-Safe
+ No synchronization is performed by this function, except for the synchronization included in malloc
+ on the elements pointer for the queue
+*/
+int rl_cdrain_queue_init(struct rl_cdrain_queue *queue, size_t capacity, const size_t elem_sizeof);
 
-int rl_cdrain_queue_add(struct rl_cdrain_queue *queue, const void *elements, size_t nitems, size_t elem_sizeof, unsigned int flags);
+/* This function is MT-Safe */
+int rl_cdrain_queue_add(struct rl_cdrain_queue *queue, const void *elements, 
+    const size_t nitems, const size_t elem_sizeof, const unsigned int flags);
 
-/* This function is not MT-Safe */
-size_t rl_cdrain_queue_drain(struct rl_cdrain_queue *queue, void *buffer, size_t max_items, size_t elem_sizeof, unsigned int flags);
+/* 
+ This function is not MT-Safe to call with the same queue/buffer object
+ Otherwise, it is MT-Safe 
+*/
+size_t rl_cdrain_queue_drain(struct rl_cdrain_queue *__restrict queue, void *__restrict buffer, 
+    const size_t max_items, const size_t elem_sizeof, const unsigned int flags);
 
-/* If this function is not called in parallel with a drain operation it is reentrant, otherwise it is not MT-Safe */
+/* 
+ This function is reentrant. 
+ This function synchronizes-with the numb
+ If a drain operation is occuring in parallel with the same queue object,
+ then the result returned is undefined.
+*/
 size_t rl_cdrain_queue_size(struct rl_cdrain_queue *queue);
 
+size_t rl_cdrain_queue_capacity(struct rl_cdrain_queue *queue, const unsigned int flags);
 
 #ifdef __cplusplus
 }
