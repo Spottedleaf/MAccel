@@ -189,10 +189,9 @@ int rl_cdrain_queue_add(struct rl_cdrain_queue *queue, const void *elements,
 
     for (;;) {
         /* Test if resizing */
-        if (current_index == SIZE_MAX) {
-            do {
-                sched_yield();
-            } while (current_index == SIZE_MAX);
+        while (current_index == SIZE_MAX) {
+            sched_yield();
+            current_index = atomicb_load_explicit_size(allocated_tail_index, memory_order_bridge_acquire);
         }
         
         /* Not resizing */
@@ -308,7 +307,7 @@ int rl_cdrain_queue_add(struct rl_cdrain_queue *queue, const void *elements,
             const size_t old_head = queue_start;
             const size_t updated_head = curr ^ length;
             
-            const size_t new_head = get_queue_length(old_head, updated_head, length_mask) + expected_length;
+            const size_t new_head = get_queue_length(old_head, updated_head, length_mask) | expected_length;
             
             /* Try to lock head */
             if (!atomicb_compare_exchange_strong_explicit_size(head_index, &curr, SIZE_MAX,
@@ -407,22 +406,19 @@ static void get_queue_indices(struct rl_cdrain_queue *queue, const unsigned int 
     volatile size_t *available_tail_index = &queue->available_tail_index.value;
     for (;;) {
         size_t head = atomicb_load_explicit_size(head_index, memory_order_bridge_seq_cst);
+        const size_t tail = atomicb_load_explicit_size(available_tail_index, memory_order_bridge_acquire);
 
         if (head == SIZE_MAX) {
             rl_pause_intrin();
             continue;
         }
 
-        head &= RL_CDRAIN_QUEUE_INDEX_LENGTH_MASK; /* Allow to be called during interrupt (ignores reading bit flag) */
-
-        size_t tail = atomicb_load_explicit_size(available_tail_index, memory_order_bridge_acquire);
-
         if (tail == SIZE_MAX) {
             sched_yield();
             continue;
         }
-
-        size_t tail_encoded = tail;
+        
+        head &= RL_CDRAIN_QUEUE_INDEX_LENGTH_MASK; /* Allow to be called during interrupt (ignores reading bit flag) */
 
         const size_t length_head = ((size_t)1) << rl_floor_log2_size(head);
         const size_t length_tail = ((size_t)1) << rl_floor_log2_size(tail);
@@ -432,12 +428,8 @@ static void get_queue_indices(struct rl_cdrain_queue *queue, const unsigned int 
         }
 
         *length_mask = length_head - 1;
-
-        head ^= length_head;
-        tail ^= length_head;
-
-        *headp = head;
-        *tailp = tail;
+        *headp = head ^ length_head;
+        *tailp = tail ^ length_head;
 
         return;
     }
@@ -490,8 +482,7 @@ int rl_cdrain_queue_init(struct rl_cdrain_queue *queue, size_t capacity, const s
 
     if (capacity < 32) {
         capacity = 32;
-    }
-    else {
+    } else {
         capacity = ((size_t)1) << rl_ceil_log2_size(capacity);
     }
 

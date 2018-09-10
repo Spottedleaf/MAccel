@@ -67,6 +67,7 @@ struct profile_conf {
     double default_post_scale_x;
     double default_post_scale_y;
     double default_power;
+    double default_max_sens;
 
     double povohat_sensitivity;
     double povohat_acceleration;
@@ -140,11 +141,31 @@ struct acceleration_profile {
 
     double constant_time;
 
-    unsigned int options;
-    enum acceleration_function function_type;
+    unsigned int options; /* flags from enum acceleration_flag */
 
     uint32_t keybind;
 };
+
+static struct coordinate perform_acceleration(struct acceleration_profile *profile, const struct coordinate pos, 
+    const double real_time) {
+    const unsigned int options = profile->options;
+    
+    struct coordinate ret = (*profile->transform_coordinate)(profile->data, pos, 
+        options & acceleration_flag_constant_time ? profile->constant_time : real_time);
+    
+    if (options & acceleration_flag_invert_x) {
+        ret.x = invert_sign(pos.x, ret.x);
+    } else {
+        ret.x = copy_sign(pos.x, ret.x);
+    }
+    if (options & acceleration_flag_invert_y) {
+        ret.y = invert_sign(pos.y, ret.y);
+    } else {
+        ret.y = copy_sign(pos.y, ret.y);
+    }
+
+    return ret;
+}
 
 struct coordinate default_acceleration_equation(void *data, const struct coordinate pos, const double time);
 struct coordinate povohat_acceleration_equation(void *data, const struct coordinate pos, const double time);

@@ -8,6 +8,7 @@ extern "C" {
 #endif /* __cplusplus */
 
 /* Disables thread suspension */
+/* TODO: Finish */
 void protect_thread(void) {
     const HANDLE curr_thr = GetCurrentThread();
 

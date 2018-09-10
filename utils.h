@@ -8,6 +8,7 @@
 #include <string.h>
 #include <stdarg.h>
 #include <math.h>
+#include <limits.h>
 
 #include <io.h>
 #include <Windows.h>
@@ -27,6 +28,24 @@ static inline void *arraycopy(void *__restrict dst, const size_t dst_off, const 
         ((const char *__restrict)src) + (src_off * elem_sizeof), nitems * elem_sizeof);
 }
 
+/* Copies the sign of the first operand to the second */
+/* If the second operand is 0, 0 is returned */
+static inline int32_t copy_sign(const int32_t original, const int32_t value) {
+    const int32_t change = (original ^ value) >> (sizeof(original) * CHAR_BIT - 1);
+
+    return (value ^ change) - change;
+}
+
+/* Changes the sign of the first operand to the opposite of the second */
+/* If the first operand is 0, then the sign of the returned value is positive */
+/* If the first operand is INT32_MIN, then the sign of the returned value is negative */
+/* If the second operand is 0, then 0 is returned */
+static inline int32_t invert_sign(const int32_t original, const int32_t value) {
+    const int32_t change = (-original ^ value) >> (sizeof(original) * CHAR_BIT - 1);
+
+    return (value ^ change) - change;
+}
+
 static void term(const int code) {
     printf_to_console("Press enter to exit...");
     getc(stdin);
@@ -42,32 +61,24 @@ static inline double get_performance_frequency_ms(void) {
 static size_t read_stdin(char *buffer, const size_t len) {
     /* \r or \n or \0 are considered end of line */
 
-    const size_t read = (size_t)_read(0, buffer, (int)(len - 1));
+    const size_t read = (size_t)_read(0, buffer, (int) (len - 1));
 
-    char *null_ptr;
-    char *newline_ptr;
-    char *carrage_ptr;
+    char *ptr;
 
-    if (null_ptr = (char *) memchr(buffer, '\0', read)) {
-        *null_ptr = '\0';
-        return null_ptr - buffer;
+    if (ptr = (char *) memchr(buffer, '\n', read)) {
+        *ptr = '\0';
+        return ptr - buffer;
     }
-    if (newline_ptr = (char *) memchr(buffer, '\n', read)) {
-        *newline_ptr = '\0';
-        return newline_ptr - buffer;
+    if (ptr = (char *) memchr(buffer, '\r', read)) {
+        *ptr = '\0';
+        return ptr - buffer;
     }
-    if (carrage_ptr = (char *) memchr(buffer, '\r', read)) {
-        *carrage_ptr = '\0';
-        return carrage_ptr - buffer;
+    if (ptr = (char *) memchr(buffer, '\0', read)) {
+        return ptr - buffer;
     }
+
     buffer[read] = '\0';
     return read;
-}
-
-static inline double u64_to_double(const uint64_t x) {
-    double ret;
-    memcpy(&ret, &x, sizeof(ret));
-    return ret;
 }
 
 void protect_thread(void);

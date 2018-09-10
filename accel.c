@@ -318,7 +318,7 @@ struct coordinate default_acceleration_equation(void *data, const struct coordin
 
 
 /* Credit to povohat for this equation */
-/* TODO: Check */
+/* TODO: Test */
 struct coordinate povohat_acceleration_equation(void *data, const struct coordinate pos, const double time) {
     struct povohat_accel_settings *settings = data;
 
@@ -328,14 +328,16 @@ struct coordinate povohat_acceleration_equation(void *data, const struct coordin
     const double length = hypot(x, y);
 
     if (settings->angle_adjustment != 0.0) {
-        const double angle = atan2(x, y) + (settings->angle_adjustment * RL_PI / 180.0);
+        /* TODO: Convert angle adjustment to radians at load */
+        const double angle = atan2(x, y) + (settings->angle_adjustment * (RL_PI / 180.0));
 
         x = length * cos(angle);
         y = length * sin(angle);
     }
 
     if (settings->angle_snapping != 0.0) {
-        const double angle_snap = settings->angle_snapping * RL_PI / 180.0;
+        /* TODO: Convert angle snapping to radians at load */
+        const double angle_snap = settings->angle_snapping * (RL_PI / 180.0);
         const double angle = atan2(x, y);
 
         const double cosa = cos(angle);
@@ -374,7 +376,7 @@ struct coordinate povohat_acceleration_equation(void *data, const struct coordin
             accel += pow(speed, settings->power);
         }
 
-        if (settings->sensitivity_cap > 0 && accel > settings->sensitivity_cap) {
+        if (settings->sensitivity_cap > 0.0 && accel > settings->sensitivity_cap) {
             accel = settings->sensitivity_cap;
         }
     }
@@ -384,8 +386,11 @@ struct coordinate povohat_acceleration_equation(void *data, const struct coordin
     x = fma(x * accel, settings->post_scale_x, settings->carry_x);
     y = fma(y * accel, settings->post_scale_y, settings->carry_y);
 
-    settings->carry_x = x - floor(x);
-    settings->carry_y = y - floor(y);
+    const double floorx = floor(x);
+    const double floory = floor(y);
 
-    return (struct coordinate) { .x = (int)x, .y = (int)y };
+    settings->carry_x = x - floorx;
+    settings->carry_y = y - floory;
+
+    return (struct coordinate) { .x = (int) floorx, .y = (int) floory };
 }
