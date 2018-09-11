@@ -267,9 +267,9 @@ int main(void) {
         QueryPerformanceCounter(&curr_time);
         real_time = ((curr_time.QuadPart - prev_time.QuadPart) * 1000) / (double)(timer_freq.QuadPart);
 
-		if (real_time < 0.0625) {
-			real_time = 0.0625;
-		}
+        if (real_time < 0.0625) {
+            real_time = 0.0625;
+        }
 
         if (!conf.assume_constant_rate) {
             time = fmin(real_time, 200.0);
