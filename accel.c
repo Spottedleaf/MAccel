@@ -18,9 +18,10 @@
 #include "console_handler.h"
 #include "logger.h"
 
-#define VERSION_MAJOR 6
-#define VERSION_MINOR 1
-#define VERSION_STR "6.1"
+#define VERSION_RELEASE 0
+#define VERSION_MAJOR 9
+#define VERSION_MINOR 0
+#define VERSION_STR "v0.9.0"
 
 static void init_config(struct rl_config_member **members, size_t *len) {
     const struct rl_config_member ret_temp[] = {
@@ -85,7 +86,7 @@ static void load_config(struct accel_conf *conf) {
 int main(void) {
     SetPriorityClass(GetCurrentProcess(), REALTIME_PRIORITY_CLASS);
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
-    system("title Accel v" VERSION_STR);
+    system("title Accel" VERSION_STR);
 
     /* load config */
 
@@ -172,7 +173,7 @@ int main(void) {
     if (conf.debug) {
         DWORD err = init_input_handler(conf.dpi);
         if (err) {
-            conf.debug = 0;
+            conf.debug_input = conf.debug = 0;
         } else if (conf.debug_input) {
             err = command_input_init(cursor_info.dwCursorPosition);
             if (err) {
@@ -265,6 +266,10 @@ int main(void) {
 
         QueryPerformanceCounter(&curr_time);
         real_time = ((curr_time.QuadPart - prev_time.QuadPart) * 1000) / (double)(timer_freq.QuadPart);
+
+		if (real_time < 0.0625) {
+			real_time = 0.0625;
+		}
 
         if (!conf.assume_constant_rate) {
             time = fmin(real_time, 200.0);

@@ -3,6 +3,8 @@
 
 # VS BS
 /x64/
+.vs/
+MAccel.sln
 
 # Prerequisites
 *.d
