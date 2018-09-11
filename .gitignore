@@ -3,6 +3,7 @@
 
 # VS BS
 /x64/
+/Release/
 .vs/
 Maccel.sln
 
