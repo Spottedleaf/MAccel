@@ -68,12 +68,10 @@ static size_t read_stdin(char *buffer, const size_t len) {
     if (ptr = (char *) memchr(buffer, '\n', read)) {
         *ptr = '\0';
         return ptr - buffer;
-    }
-    if (ptr = (char *) memchr(buffer, '\r', read)) {
+    } else if (ptr = (char *) memchr(buffer, '\r', read)) {
         *ptr = '\0';
         return ptr - buffer;
-    }
-    if (ptr = (char *) memchr(buffer, '\0', read)) {
+    } else if (ptr = (char *) memchr(buffer, '\0', read)) {
         return ptr - buffer;
     }
 

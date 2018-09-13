@@ -480,7 +480,7 @@ int rl_cdrain_queue_init(struct rl_cdrain_queue *queue, size_t capacity, const s
         return RL_ENOMEM;
     }
 
-    if (capacity < 32) {
+    if (capacity <= 32) {
         capacity = 32;
     } else {
         capacity = ((size_t)1) << rl_ceil_log2_size(capacity);

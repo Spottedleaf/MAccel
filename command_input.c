@@ -30,7 +30,7 @@ static char *next_argument(const char *str) {
 
 void command_input(void *param) {
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_LOWEST);
-    const COORD cursor_pos = *(COORD *)param;
+    const COORD cursor_pos = *(const COORD *)param;
     free(param);
 
     const COORD info_pos = (COORD) { .X = 0, .Y = (cursor_pos.Y + 1) };
@@ -48,12 +48,11 @@ void command_input(void *param) {
     const double freq = get_performance_frequency_ms();
     LARGE_INTEGER prev_time, curr_time;
 
+    /* TODO: Rewrite this to use sscanf */
     for (;; SetConsoleCursorPosition(console, cursor_pos)) {
         const size_t read = read_stdin(input_buffer, sizeof(input_buffer));
 
         printf_to_console_pos_clear(cursor_pos, "");
-
-        QueryPerformanceCounter(&prev_time);
 
         printf_to_console(input_buffer);
 

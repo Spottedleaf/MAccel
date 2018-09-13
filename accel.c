@@ -302,7 +302,7 @@ static int rl_perform_accel(struct rl_accel_settings *settings, const int old, c
 
     settings->carry = modf(next, &next);
 
-    return (int)next;
+    return (int) next;
 }
 
 struct coordinate default_acceleration_equation(void *data, const struct coordinate pos, const double time) {
@@ -322,8 +322,8 @@ struct coordinate default_acceleration_equation(void *data, const struct coordin
 struct coordinate povohat_acceleration_equation(void *data, const struct coordinate pos, const double time) {
     struct povohat_accel_settings *settings = data;
 
-    double x = pos.x;
-    double y = pos.y;
+    double x = (double) pos.x;
+    double y = (double) pos.y;
 
     const double length = hypot(x, y);
 
@@ -355,7 +355,7 @@ struct coordinate povohat_acceleration_equation(void *data, const struct coordin
             if (cosa > 0) {
                 x = length;
             } else {
-                y = -length;
+                x = -length;
             }
         }
     }
@@ -363,6 +363,7 @@ struct coordinate povohat_acceleration_equation(void *data, const struct coordin
     x *= settings->pre_scale_x;
     y *= settings->pre_scale_y;
 
+    /* TODO: If speed cap is 0 on load, set it to double's max value */
     if (settings->speed_cap != 0.0 && length > settings->speed_cap) {
         x *= (settings->speed_cap / length);
         y *= (settings->speed_cap / length);
@@ -376,6 +377,7 @@ struct coordinate povohat_acceleration_equation(void *data, const struct coordin
             accel += pow(speed, settings->power);
         }
 
+        /* TODO: If sens cap <= 0.0, on load set it to double's max value */
         if (settings->sensitivity_cap > 0.0 && accel > settings->sensitivity_cap) {
             accel = settings->sensitivity_cap;
         }
@@ -388,6 +390,11 @@ struct coordinate povohat_acceleration_equation(void *data, const struct coordin
 
     const double floorx = floor(x);
     const double floory = floor(y);
+
+    if (!isfinite(floorx) || !isfinite(floory)) {
+        /* TODO:  */
+        return pos;
+    }
 
     settings->carry_x = x - floorx;
     settings->carry_y = y - floory;
