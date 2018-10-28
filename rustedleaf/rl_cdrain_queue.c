@@ -112,12 +112,12 @@ static inline bool rl_mulsize_overflow(const size_t a, const size_t b) {
 
 static void *rl_smalloc(const size_t nitems, const size_t itemsize) {
     if (rl_mulsize_overflow(nitems, itemsize)) {
-        printf("Overflow of multiplication for memory allocation: %zi, %zi\n", nitems, itemsize);
+        printf("Overflow of multiplication for memory allocation: %zu, %zu\n", nitems, itemsize);
         exit(EXIT_FAILURE);
     }
     void *ret = malloc(nitems * itemsize);
     if (!ret) {
-        printf("Unable to allocate %zi bytes of memory\n", (nitems * itemsize));
+        printf("Unable to allocate %zu bytes of memory\n", (nitems * itemsize));
         exit(EXIT_FAILURE);
     }
     return ret;
@@ -147,15 +147,10 @@ static size_t obtain_max_len(const size_t elem_sizeof) {
 }
 
 static void rl_wait_set(volatile size_t *value, const size_t wait, const size_t set) {
-    for (;;) {
-        size_t temp = wait;
-        /* This will synchronize with all previous additions */
-        if (atomicb_compare_exchange_weak_explicit_size(value, &temp, set, 
-                memory_order_bridge_seq_cst, memory_order_bridge_seq_cst)) {
-            break;
-        }
+    while (atomicb_load_explicit_size(value, memory_order_bridge_acquire) != wait) {
         rl_pause_intrin();
     }
+    atomicb_store_explicit_size(value, set, memory_order_bridge_seq_cst);
 }
 
 /* Inclusive head, Exclusive tail */
@@ -390,7 +385,7 @@ size_t rl_cdrain_queue_drain(struct rl_cdrain_queue *__restrict queue, void *__r
     if (flags & RL_CDRAIN_QUEUE_PEEK) {
         /* Only write if there's a need */
         if (!(flags & RL_CDRAIN_QUEUE_NORESIZE)) {
-            atomicb_store_explicit_size(&queue->head_index.value, head, memory_order_bridge_seq_cst);
+            atomicb_store_explicit_size(&queue->head_index.value, head | length, memory_order_bridge_seq_cst);
         }
     } else {
         atomicb_store_explicit_size(&queue->head_index.value, new_head | length, memory_order_bridge_seq_cst);
