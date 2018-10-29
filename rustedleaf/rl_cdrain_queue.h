@@ -22,33 +22,31 @@ enum rl_cdrain_queue_flags {
     RL_CDRAIN_QUEUE_PEEK     = (1 << 1),
 };
 
-__declspec(align(RL_X86_CACHE_LINE_SIZE)) struct rl_aligned_cache_size {
-    volatile size_t value;
-};
-
-struct rl_cdrain_queue {
+__declspec(align(RL_X86_CACHE_LINE_SIZE)) struct rl_cdrain_queue {
     void *__restrict elements;
     
     /* Current head index */
-    struct rl_aligned_cache_size head_index;
+    __declspec(align(RL_X86_CACHE_LINE_SIZE)) volatile size_t head_index;
     
     /* Exclusive index of the last element added to the queue */
-    struct rl_aligned_cache_size available_tail_index;
+    __declspec(align(RL_X86_CACHE_LINE_SIZE)) volatile size_t available_tail_index;
     
     /* Exclusive index of the last element pending addition to the queue */
-    struct rl_aligned_cache_size allocated_tail_index;
+    __declspec(align(RL_X86_CACHE_LINE_SIZE)) volatile size_t allocated_tail_index;
 };
 
 __declspec(align(RL_X86_CACHE_LINE_SIZE)) struct rl_aligned_cache_cdrain_queue {
     struct rl_cdrain_queue queue;
 };
 
-/* 
+/*
  Not MT-Safe
  No synchronization is performed by this function, except for the synchronization included in malloc
  on the elements pointer for the queue
 */
 int rl_cdrain_queue_init(struct rl_cdrain_queue *queue, size_t capacity, const size_t elem_sizeof);
+
+void rl_cdrain_queue_free(struct rl_cdrain_queue *queue);
 
 /* This function is MT-Safe */
 int rl_cdrain_queue_add(struct rl_cdrain_queue *queue, const void *elements, 

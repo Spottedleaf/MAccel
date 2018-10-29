@@ -5,16 +5,7 @@
 
 #include <immintrin.h>
 
-#ifdef __SSE2__
-
-/* rl_pause_intrin maps to _mm_pause if available */
 #define rl_pause_intrin() _mm_pause()
-
-#else
-
-#define rl_pause_intrin()
-
-#endif /* __SSE2__ */
 
 
 /* errno defs */
