@@ -24,13 +24,13 @@ enum rl_cdrain_queue_flags {
 
 __declspec(align(RL_X86_CACHE_LINE_SIZE)) struct rl_cdrain_queue {
     void *__restrict elements;
-    
+
     /* Current head index */
     __declspec(align(RL_X86_CACHE_LINE_SIZE)) volatile size_t head_index;
-    
+
     /* Exclusive index of the last element added to the queue */
     __declspec(align(RL_X86_CACHE_LINE_SIZE)) volatile size_t available_tail_index;
-    
+
     /* Exclusive index of the last element pending addition to the queue */
     __declspec(align(RL_X86_CACHE_LINE_SIZE)) volatile size_t allocated_tail_index;
 };
@@ -39,37 +39,24 @@ __declspec(align(RL_X86_CACHE_LINE_SIZE)) struct rl_aligned_cache_cdrain_queue {
     struct rl_cdrain_queue queue;
 };
 
-/*
- Not MT-Safe
- No synchronization is performed by this function, except for the synchronization included in malloc
- on the elements pointer for the queue
-*/
+
 int rl_cdrain_queue_init(struct rl_cdrain_queue *queue, size_t capacity, const size_t elem_sizeof);
 
 void rl_cdrain_queue_free(struct rl_cdrain_queue *queue);
 
-/* This function is MT-Safe */
 int rl_cdrain_queue_add(struct rl_cdrain_queue *queue, const void *elements, 
     const size_t nitems, const size_t elem_sizeof, const unsigned int flags);
 
-/* 
- This function is not MT-Safe to call with the same queue/buffer object
- Otherwise, it is MT-Safe 
-*/
 size_t rl_cdrain_queue_drain(struct rl_cdrain_queue *__restrict queue, void *__restrict buffer, 
     const size_t max_items, const size_t elem_sizeof, const unsigned int flags);
 
-/* 
- This function is reentrant. 
- This function synchronizes-with the numb
- If a drain operation is occuring in parallel with the same queue object,
- then the result returned is undefined.
-*/
 size_t rl_cdrain_queue_size(struct rl_cdrain_queue *queue, const unsigned int flags);
 
 size_t rl_cdrain_queue_remaining_capacity(struct rl_cdrain_queue *queue, const unsigned int flags);
 
 size_t rl_cdrain_queue_capacity(struct rl_cdrain_queue *queue, const unsigned int flags);
+
+size_t rl_cdrain_queue_clear(struct rl_cdrain_queue *queue);
 
 #ifdef __cplusplus
 }

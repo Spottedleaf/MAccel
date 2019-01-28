@@ -1,12 +1,5 @@
 /* Start rustedleaf copy-pastes */
-#ifdef __linux__
-#include <byteswap.h>
-#endif /* __linux__ */
-
-#ifdef _WIN32
 #include <intrin.h>
-#endif /* _WIN32 */
-
 /* End rustedleaf copy-pastes */
 
 #include <Windows.h>
@@ -32,32 +25,20 @@ extern "C" {
  * Returns the ceil of the log2 of the specified value. Undefined result if val == 0
  */
 static inline unsigned int rl_ceil_log2_u32(const uint32_t val) {
-    #ifdef __GNUC__
-    return (sizeof(val) * CHAR_BIT) - __builtin_clzl(val - 1);
-    #elif defined _WIN32
     return (sizeof(val) * CHAR_BIT) - __lzcnt(val - 1);
-    #else
-    abort();
-    #endif
 }
 
 /*
  * Returns the ceil of the log2 of the specified value. Undefined result if val == 0
  */
 static inline unsigned int rl_ceil_log2_u64(const uint64_t val) {
-    #ifdef __GNUC__
-    return (sizeof(val) * CHAR_BIT) - __builtin_clzll(val - 1);
-    #elif defined _WIN32
     return (sizeof(val) * CHAR_BIT) - (unsigned int ) __lzcnt64(val - 1);
-    #else
-    abort();
-    #endif
 }
 
 /*
  * Returns the ceil of the log2 of the specified value. Undefined result if val == 0
  */
-static inline unsigned int rl_ceil_log2_size(size_t val) {
+static inline unsigned int rl_ceil_log2_size(const size_t val) {
     if (SIZE_MAX <= UINT32_MAX) {
         return rl_ceil_log2_u32((uint32_t) val);
     } else if (SIZE_MAX <= UINT64_MAX) {
@@ -70,36 +51,44 @@ static inline unsigned int rl_ceil_log2_size(size_t val) {
  * Returns the floor of the log2 of the specified value. Undefined result if val == 0
  */
 static inline unsigned int rl_floor_log2_u32(const uint32_t val) {
-    #ifdef __GNUC__
-    return (sizeof(val) * CHAR_BIT - 1) ^ __builtin_clzl(val);
-    #elif defined _WIN32
     return (sizeof(val) * CHAR_BIT - 1) ^ __lzcnt(val);
-    #else
-    abort();
-    #endif
 }
 
 /*
  * Returns the floor of the log2 of the specified value. Undefined result if val == 0
  */
 static inline unsigned int rl_floor_log2_u64(const uint64_t val) {
-    #ifdef __GNUC__
-    return (sizeof(val) * CHAR_BIT - 1) ^ __builtin_clzll(val);
-    #elif defined _WIN32
     return (sizeof(val) * CHAR_BIT - 1) ^ (unsigned int) __lzcnt64(val);
-    #else
-    abort();
-    #endif
 }
 
 /*
  * Returns the floor of the log2 of the specified value. Undefined result if val == 0
  */
-static inline unsigned int rl_floor_log2_size(size_t val) {
+static inline unsigned int rl_floor_log2_size(const size_t val) {
     if (SIZE_MAX <= UINT32_MAX) {
         return rl_floor_log2_u32((uint32_t) val);
     } else if (SIZE_MAX <= UINT64_MAX) {
         return rl_floor_log2_u64((uint64_t) val);
+    }
+    abort();
+}
+
+static inline size_t rl_round_ceil_log2_size(const size_t val) {
+    static const size_t HIGH_BIT = (SIZE_MAX) ^ (SIZE_MAX >> 1);
+    if (SIZE_MAX <= UINT32_MAX) {
+        return HIGH_BIT >> ((sizeof(uint32_t) * CHAR_BIT) - rl_ceil_log2_u32((uint32_t)val));
+    } else if (SIZE_MAX <= UINT64_MAX) {
+        return HIGH_BIT >> ((sizeof(uint64_t) * CHAR_BIT) - rl_ceil_log2_u64((uint64_t)val));
+    }
+    abort();
+}
+
+static inline size_t rl_round_floor_log2_size(const size_t val) {
+    static const size_t HIGH_BIT = (SIZE_MAX) ^ (SIZE_MAX >> 1);
+    if (SIZE_MAX <= UINT32_MAX) {
+        return HIGH_BIT >> ((sizeof(uint32_t) * CHAR_BIT - 1) ^ rl_floor_log2_u32((uint32_t)val));
+    } else if (SIZE_MAX <= UINT64_MAX) {
+        return HIGH_BIT >> ((sizeof(uint64_t) * CHAR_BIT - 1) ^ rl_floor_log2_u64((uint64_t)val));
     }
     abort();
 }
@@ -126,7 +115,6 @@ static void *rl_smalloc(const size_t nitems, const size_t itemsize) {
 /* End rustedleaf copy pastes */
 
 static inline void sched_yield(void) {
-    rl_pause_intrin();
     SwitchToThread();
 }
 
@@ -143,14 +131,7 @@ static size_t obtain_max_len(const size_t elem_sizeof) {
         return RL_CDRAIN_QUEUE_MAX_LENGTH;
     }
     
-    return ((size_t)1) << rl_floor_log2_size(len);
-}
-
-static void rl_wait_set(volatile size_t *value, const size_t wait, const size_t set) {
-    while (atomicb_load_explicit_size(value, memory_order_bridge_seq_cst) != wait) {
-        rl_pause_intrin();
-    }
-    atomicb_store_explicit_size(value, set, memory_order_bridge_seq_cst);
+    return rl_round_floor_log2_size(len);
 }
 
 /* Inclusive head, Exclusive tail */
@@ -167,8 +148,16 @@ static inline size_t get_remaining_length(const size_t head, const size_t tail, 
     }
 }
 
-
-
+static void rl_wait_set(volatile size_t *value, const size_t wait, const size_t set) {
+    size_t failures = 0;
+    while (atomicb_load_explicit_size(value, memory_order_bridge_seq_cst) != wait) {
+        if (++failures >= 128) {
+            sched_yield();
+        }
+        rl_pause_intrin();
+    }
+    atomicb_store_explicit_size(value, set, memory_order_bridge_seq_cst);
+}
 
 
 int rl_cdrain_queue_add(struct rl_cdrain_queue *queue, const void *elements, 
@@ -176,7 +165,7 @@ int rl_cdrain_queue_add(struct rl_cdrain_queue *queue, const void *elements,
     /* This is a maximum length which will not overflow */
     const size_t max_length = obtain_max_len(elem_sizeof);
     
-    if (nitems > max_length) {
+    if (nitems >= max_length) {
         return RL_ENOMEM;
     }
 
@@ -185,12 +174,11 @@ int rl_cdrain_queue_add(struct rl_cdrain_queue *queue, const void *elements,
     volatile size_t *allocated_tail_index = &queue->allocated_tail_index;
     
     size_t current_index = atomicb_load_explicit_size(allocated_tail_index, memory_order_bridge_acquire);
+    size_t failures = 0;
 
-    for (size_t failed_attempts = 0;;) {
-        if (failed_attempts > 4) {
-            for (volatile size_t i = 0; i < (failed_attempts); ++i) {
-                rl_pause_intrin();
-            }
+    for (;;) {
+        for (size_t i = 0; i < failures; ++i) {
+            rl_pause_intrin();
         }
         /* Test if resizing */
         while (current_index == SIZE_MAX) {
@@ -201,7 +189,7 @@ int rl_cdrain_queue_add(struct rl_cdrain_queue *queue, const void *elements,
         /* Not resizing */
         
         /* Decode length */
-        const size_t length = ((size_t)1) << rl_floor_log2_size(current_index);
+        const size_t length = rl_round_floor_log2_size(current_index);
         const size_t length_mask = length - 1;
         
         const size_t allocated_start = current_index ^ length; /* Inclusive */
@@ -209,26 +197,33 @@ int rl_cdrain_queue_add(struct rl_cdrain_queue *queue, const void *elements,
          
         size_t head_current_raw = atomicb_load_explicit_size(head_index, memory_order_bridge_acquire);
         
-        /* Validate the head index */
+        /* Validate the indices */
+
+        /*
+         * May not be resizing
+         * Must have equal encoded lengths (otherwise size check is invalid)
+         */
+
         if (head_current_raw == SIZE_MAX) {
             rl_pause_intrin();
             current_index = atomicb_load_explicit_size(allocated_tail_index, memory_order_bridge_acquire);
-            ++failed_attempts;
             continue;
         }
         head_current_raw &= RL_CDRAIN_QUEUE_INDEX_LENGTH_MASK; /* Remove bitfields */
 
-        const size_t length_head = ((size_t)1) << rl_floor_log2_size(head_current_raw);
+        const size_t length_head = rl_round_floor_log2_size(head_current_raw);
 
         if (length_head != length) {
             rl_pause_intrin();
-            ++failed_attempts;
             current_index = atomicb_load_explicit_size(allocated_tail_index, memory_order_bridge_acquire);
             continue;
         }
+
+        /* Finished validating the head index */
+
         const size_t queue_start = head_current_raw & length_mask; /* Inclusive */
 
-        /* Find remaining length to ensure there would be enough space */
+        /* Find remaining length to ensure there is enough space */
         const size_t remaining_length = get_remaining_length(queue_start, allocated_start, length);
 
         if (remaining_length > nitems) {
@@ -236,8 +231,7 @@ int rl_cdrain_queue_add(struct rl_cdrain_queue *queue, const void *elements,
             if (!atomicb_compare_exchange_strong_explicit_size(allocated_tail_index,
                     &current_index, allocated_end | length, memory_order_bridge_seq_cst, 
                     memory_order_bridge_seq_cst)) {
-                rl_pause_intrin();
-                ++failed_attempts;
+                ++failures;
                 continue;
             }
 
@@ -264,13 +258,13 @@ int rl_cdrain_queue_add(struct rl_cdrain_queue *queue, const void *elements,
         /* Attempt to lock allocated_tail_index */
         if (!atomicb_compare_exchange_strong_explicit_size(allocated_tail_index, &current_index, SIZE_MAX,
                 memory_order_bridge_seq_cst, memory_order_bridge_seq_cst)) {
-            ++failed_attempts;
+            ++failures;
             rl_pause_intrin();
             continue;
         }
         
         /* Add 1 to ensure that the resized queue will not be full */
-        const size_t expected_length = ((size_t)1) << rl_ceil_log2_size(required_length + 1);
+        const size_t expected_length = rl_round_ceil_log2_size(required_length + 1);
         void *new_elements = rl_smalloc(expected_length, elem_sizeof);
         void *curr_elements = queue->elements;
         
@@ -285,16 +279,13 @@ int rl_cdrain_queue_add(struct rl_cdrain_queue *queue, const void *elements,
         /* Copy the elements over */
         
         if (queue_start < allocated_start) {
-            /* sequentially ordered */
+            /* Sequential */
             arraycopy(new_elements, 0, curr_elements, queue_start, length - remaining_length, elem_sizeof);
         } else {
-            /* wrapped */
-            
-            /* copy from head->max index */
-            arraycopy(new_elements, 0, curr_elements, queue_start, length - queue_start, elem_sizeof);
-            
-            /* copy from 0->tail */
-            arraycopy(new_elements, length - queue_start, curr_elements, 0, allocated_start, elem_sizeof);
+            /* Wrapped */
+            const size_t end = length - queue_start;
+            arraycopy(new_elements, 0, curr_elements, queue_start, end, elem_sizeof);
+            arraycopy(new_elements, end, curr_elements, 0, allocated_start, elem_sizeof);
         }
         
         /* Copy our elements over */
@@ -354,7 +345,7 @@ size_t rl_cdrain_queue_drain(struct rl_cdrain_queue *__restrict queue, void *__r
     } else {
         for (;;) {
             head = atomicb_fetch_or_explicit_size(&queue->head_index, READING_BIT, memory_order_bridge_seq_cst);
-            if (head == SIZE_MAX) {
+            if (head >= READING_BIT) {
                 rl_pause_intrin();
                 continue;
             }
@@ -369,7 +360,7 @@ size_t rl_cdrain_queue_drain(struct rl_cdrain_queue *__restrict queue, void *__r
     /* By locking the head it is guaranteed the tail will have the same length as head */
     void *__restrict elements = queue->elements;
 
-    const size_t length = ((size_t)1) << rl_floor_log2_size(head);
+    const size_t length = rl_round_floor_log2_size(head);
     const size_t length_mask = length - 1;
     
     const size_t tail_encoded = tail;
@@ -407,9 +398,12 @@ size_t rl_cdrain_queue_drain(struct rl_cdrain_queue *__restrict queue, void *__r
     return items_to_read;
 }
 
+void rl_cdrain_queue_clear(struct rl_cdrain_queue *queue) {
+    rl_cdrain_queue_drain(queue, NULL, SIZE_MAX, 0, 0); /* elem_sizeof only used if buffer != NULL */
+}
 
 static void get_queue_indices(struct rl_cdrain_queue *queue, const unsigned int flags, 
-    size_t *headp, size_t *tailp, size_t *length_mask, size_t *length) {
+    size_t *headp, size_t *tailp, size_t *length) {
     volatile size_t *head_index = &queue->head_index;
     volatile size_t *available_tail_index = &queue->available_tail_index;
     for (;;) {
@@ -428,14 +422,13 @@ static void get_queue_indices(struct rl_cdrain_queue *queue, const unsigned int 
         
         head &= RL_CDRAIN_QUEUE_INDEX_LENGTH_MASK; /* Allow to be called during interrupt (ignores reading bit flag) */
 
-        const size_t length_head = ((size_t)1) << rl_floor_log2_size(head);
-        const size_t length_tail = ((size_t)1) << rl_floor_log2_size(tail);
+        const size_t length_head = rl_round_floor_log2_size(head);
+        const size_t length_tail = rl_round_floor_log2_size(tail);
         if (length_head != length_tail) {
             rl_pause_intrin();
             continue;
         }
 
-        *length_mask = length_head - 1;
         *length = length_head;
         *headp = head ^ length_head;
         *tailp = tail ^ length_head;
@@ -446,15 +439,15 @@ static void get_queue_indices(struct rl_cdrain_queue *queue, const unsigned int 
 
 
 size_t rl_cdrain_queue_size(struct rl_cdrain_queue *queue, const unsigned int flags) {
-    size_t head, tail, length_mask, length;
-    get_queue_indices(queue, flags, &head, &tail, &length_mask, &length);
+    size_t head, tail, length;
+    get_queue_indices(queue, flags, &head, &tail, &length);
 
-    return get_queue_length(head, tail, length_mask);
+    return get_queue_length(head, tail, length - 1);
 }
 
 size_t rl_cdrain_queue_remaining_capacity(struct rl_cdrain_queue *queue, const unsigned int flags) {
-    size_t head, tail, length_mask, length;
-    get_queue_indices(queue, flags, &head, &tail, &length_mask, &length);
+    size_t head, tail, length;
+    get_queue_indices(queue, flags, &head, &tail, &length);
 
     return get_remaining_length(head, tail, length);
 }
@@ -464,7 +457,7 @@ size_t rl_cdrain_queue_capacity(struct rl_cdrain_queue *queue, const unsigned in
     if (flags & RL_CDRAIN_QUEUE_NORESIZE) {
         /* Use head as there is likely less contention, especially with this flag set */
         const size_t head = atomicb_load_explicit_size(&queue->head_index, memory_order_bridge_seq_cst);
-        return ((size_t)1) << rl_floor_log2_size(head & RL_CDRAIN_QUEUE_INDEX_LENGTH_MASK);
+        return rl_round_floor_log2_size(head & RL_CDRAIN_QUEUE_INDEX_LENGTH_MASK);
     }
 
     volatile size_t *allocated_tail_index = &queue->allocated_tail_index;
@@ -477,7 +470,7 @@ size_t rl_cdrain_queue_capacity(struct rl_cdrain_queue *queue, const unsigned in
             continue;
         }
 
-        return ((size_t)1) << rl_floor_log2_size(tail);
+        return rl_round_floor_log2_size(tail);
     }
 }
 
@@ -487,12 +480,10 @@ size_t rl_cdrain_queue_capacity(struct rl_cdrain_queue *queue, const unsigned in
 int rl_cdrain_queue_init(struct rl_cdrain_queue *queue, size_t capacity, const size_t elem_sizeof) {
     if (capacity > RL_CDRAIN_QUEUE_MAX_LENGTH) {
         return RL_ENOMEM;
-    }
-
-    if (capacity <= 32) {
+    } else if (capacity <= 32) {
         capacity = 32;
     } else {
-        capacity = ((size_t)1) << rl_ceil_log2_size(capacity);
+        capacity = rl_round_ceil_log2_size(capacity);
     }
 
     if (capacity > obtain_max_len(elem_sizeof)) {
